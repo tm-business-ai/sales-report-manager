@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test artifacts
+.pytest_cache/
+pytest_tmp/
+tmp_pytest_run/
+tmp_pytest_run*/
+tmp_manual_checks*/
+.pytest_tmp/
+pytest-cache-files-*/
+
+# Application runtime artifacts
+logs/*
+!logs/.gitkeep
+data/output/*
+!data/output/.gitkeep
+release/
+build/
+dist/
+*.spec
+
+# Generated reports and local data
+*.log
+*.xlsx
+*.xls
+*.csv
+!data/input/sample_*.csv
+!data/input/sample_*.xlsx
+!data/input/sample_*.xls
+!data/input/*template*.csv
+!data/input/sales_*.csv
+!requirements*.txt
+
+# Local secrets and environment
+.env
+.env.*
+*.local
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

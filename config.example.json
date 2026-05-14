@@ -1,0 +1,33 @@
+{
+  "input_dir": "data/input",
+  "output_dir": "data/output",
+  "pattern": "sales_*.csv",
+  "all_summaries": true,
+  "monthly_trend": true,
+  "charts": true,
+  "notify": false,
+  "notify_webhook_url": null,
+  "column_aliases": {},
+  "warning_amount_threshold": 1000000,
+  "summary_csv_dir": "data/output",
+  "summary_csv_prefix": "summary",
+  "style": {
+    "header_fill": "D9EAF7",
+    "total_fill": "EAF4E2",
+    "title_size": 14,
+    "chart_height": 7,
+    "chart_width": 14
+  },
+  "presets": {
+    "april_report": {
+      "month": "2026-04",
+      "output_name": "april_sales.xlsx"
+    },
+    "april_fruit_report": {
+      "start_date": "2026-04-01",
+      "end_date": "2026-04-30",
+      "category": "果物",
+      "output_name": "april_fruit_sales.xlsx"
+    }
+  }
+}
