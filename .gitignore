@@ -18,9 +18,7 @@ pytest-cache-files-*/
 
 # Application runtime artifacts
 logs/*
-!logs/.gitkeep
 data/output/*
-!data/output/.gitkeep
 release/
 build/
 dist/
