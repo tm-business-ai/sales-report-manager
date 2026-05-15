@@ -575,6 +575,28 @@ def test_prepare_validation_errors_for_excel_includes_fix_column() -> None:
     assert "数量には" in excel_df.loc[0, "修正方法"]
 
 
+def test_create_validation_error_rows_includes_source_values() -> None:
+    error = report.DataValidationError(
+        [
+            report.ValidationIssue(
+                "invalid_quantity",
+                "数量に数値以外の値があります。不正な値: abc",
+                "sales.csv",
+                2,
+                "数量には 1、2、10 のような0以上の数値を入力してください。",
+                {"date": "2026-04-01", "product": "りんご", "quantity": "abc", "unit_price": "100"},
+            )
+        ]
+    )
+
+    rows = report.create_validation_error_rows(error)
+
+    assert rows.loc[0, "fix"].startswith("数量には")
+    assert rows.loc[0, "date"] == "2026-04-01"
+    assert rows.loc[0, "product"] == "りんご"
+    assert rows.loc[0, "quantity"] == "abc"
+
+
 def test_save_to_excel_writes_validation_error_fix_column(tmp_path: Path) -> None:
     detail_df = report.filter_data(report.validate_data(make_sales_dataframe()), month="2026-04")
     summaries = report.create_summaries(detail_df, "product", all_summaries=False)

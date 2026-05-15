@@ -152,6 +152,7 @@ class ValidationIssue:
     source_file: str
     source_row: int | None
     fix: str = ""
+    values: dict[str, object] | None = None
 
 
 class DataValidationError(ValueError):
@@ -185,6 +186,7 @@ def write_validation_error_report(error: DataValidationError, output_file: Path)
             "fix": issue.fix,
             "source_file": issue.source_file,
             "source_row": issue.source_row,
+            **{key: ("" if value is None or pd.isna(value) else value) for key, value in (issue.values or {}).items()},
         }
         for issue in error.issues
     ]
@@ -202,12 +204,12 @@ def create_validation_error_rows(error: DataValidationError | None = None) -> pd
             "source_row": issue.source_row,
             "message": issue.message,
             "fix": issue.fix,
-            "date": "",
-            "product": "",
-            "category": "",
-            "quantity": "",
-            "unit_price": "",
-            "amount": "",
+            "date": "" if not issue.values else issue.values.get("date", ""),
+            "product": "" if not issue.values else issue.values.get("product", ""),
+            "category": "" if not issue.values else issue.values.get("category", ""),
+            "quantity": "" if not issue.values else issue.values.get("quantity", ""),
+            "unit_price": "" if not issue.values else issue.values.get("unit_price", ""),
+            "amount": "" if not issue.values else issue.values.get("amount", ""),
         }
         for issue in error.issues
     ]
@@ -415,7 +417,15 @@ def make_issue(row: pd.Series, issue: str, message: str, fallback_index: int, fi
     if pd.isna(source_file):
         source_file = "-"
     source_row_value = fallback_index + 2 if pd.isna(source_row) else int(source_row)
-    return ValidationIssue(issue, message, str(source_file), source_row_value, fix)
+    values = {
+        "date": row.get("_raw_date", row.get("date", "")),
+        "product": row.get("product", ""),
+        "category": row.get("category", ""),
+        "quantity": row.get("_raw_quantity", row.get("quantity", "")),
+        "unit_price": row.get("_raw_unit_price", row.get("unit_price", "")),
+        "amount": row.get("_raw_amount", row.get("amount", "")),
+    }
+    return ValidationIssue(issue, message, str(source_file), source_row_value, fix, values)
 
 
 def _sample_invalid_values(values: pd.Series, limit: int = 3) -> str:

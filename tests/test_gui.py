@@ -1,4 +1,5 @@
 import gui
+import report
 from pathlib import Path
 
 
@@ -13,6 +14,9 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert "先に「Excelレポートを作成」" in gui.NO_REPORT_TO_OPEN_MESSAGE
     assert "削除または移動" in gui.REPORT_FILE_MISSING_MESSAGE
     assert "出力フォルダ" in gui.OUTPUT_FOLDER_MISSING_MESSAGE
+    assert "検証エラーはありません" in gui.NO_VALIDATION_ERRORS_MESSAGE
+    assert "まだエラーCSV" in gui.NO_ERROR_CSV_MESSAGE
+    assert any(column == "fix" and label == "修正方法" for column, label, _width in gui.ERROR_REVIEW_COLUMNS)
     assert hasattr(gui.main, "format_user_error_message")
     assert hasattr(gui.main, "read_sales_columns")
     assert hasattr(gui.main, "infer_column_aliases")
@@ -34,6 +38,10 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert hasattr(app_class, "_open_output_folder")
     assert hasattr(app_class, "_open_report_file")
     assert hasattr(app_class, "_remember_latest_report")
+    assert hasattr(app_class, "_review_input_errors")
+    assert hasattr(app_class, "_open_error_csv")
+    assert hasattr(app_class, "_set_error_review_rows")
+    assert hasattr(app_class, "_error_rows_from_validation_error")
 
 
 def test_gui_column_mapping_helpers_convert_between_shapes() -> None:
@@ -91,3 +99,43 @@ def test_gui_open_output_folder_creates_and_opens_folder(tmp_path: Path) -> None
     assert (tmp_path / "output").is_dir()
     assert opened == [tmp_path / "output"]
     assert messages == []
+
+
+def test_gui_error_rows_include_fix_column() -> None:
+    app_class = gui.MonthlyReportApp
+    error = gui.main.DataValidationError(
+        [
+            report.ValidationIssue(
+                "invalid_quantity",
+                "数量に数値以外の値があります。不正な値: abc",
+                "sales.csv",
+                2,
+                "数量には 1、2、10 のような0以上の数値を入力してください。",
+                {"quantity": "abc", "product": "りんご"},
+            )
+        ]
+    )
+
+    rows = app_class._error_rows_from_validation_error(object.__new__(app_class), error)
+
+    assert rows[0]["source_file"] == "sales.csv"
+    assert rows[0]["fix"].startswith("数量には")
+    assert rows[0]["quantity"] == "abc"
+
+
+def test_gui_open_error_csv_guidance_without_launching(tmp_path: Path) -> None:
+    app_class = gui.MonthlyReportApp
+    app = object.__new__(app_class)
+    messages: list[str] = []
+    opened: list[Path] = []
+    app._show_error = messages.append
+    app._open_report_file = opened.append
+    app.latest_error_csv_path = None
+
+    app_class._open_error_csv(app)
+    assert gui.NO_ERROR_CSV_MESSAGE in messages[-1]
+
+    error_csv = tmp_path / "errors.csv"
+    app.latest_error_csv_path = error_csv
+    app_class._open_error_csv(app)
+    assert opened == [error_csv]

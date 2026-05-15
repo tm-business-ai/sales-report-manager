@@ -45,6 +45,20 @@ NO_REPORT_TO_OPEN_MESSAGE = "まだ開けるレポートがありません。\n�
 REPORT_FILE_MISSING_MESSAGE = "レポートファイルが見つかりません。\n削除または移動された可能性があります。"
 OUTPUT_FOLDER_MISSING_MESSAGE = "出力フォルダが見つかりません。\n出力フォルダの指定を確認してください。"
 REPORT_SELECTION_REQUIRED_MESSAGE = "開くレポートを一覧から選択してください。"
+NO_VALIDATION_ERRORS_MESSAGE = "検証エラーはありません。\n現在の入力データは正常に読み込めます。"
+NO_ERROR_CSV_MESSAGE = "まだエラーCSVは作成されていません。\n先に入力データを検証するか、レポートを作成してください。"
+ERROR_REVIEW_COLUMNS = (
+    ("source_file", "元ファイル名", 160),
+    ("source_row", "行番号", 80),
+    ("message", "エラー内容", 280),
+    ("fix", "修正方法", 320),
+    ("date", "日付", 120),
+    ("product", "商品名", 140),
+    ("category", "カテゴリ", 120),
+    ("quantity", "数量", 90),
+    ("unit_price", "単価", 90),
+    ("amount", "金額", 100),
+)
 
 
 class MonthlyReportApp(BaseWindow):
@@ -55,6 +69,7 @@ class MonthlyReportApp(BaseWindow):
         self.resizable(True, True)
         self.report_history: list[Path] = []
         self.latest_report_path: Path | None = None
+        self.latest_error_csv_path: Path | None = None
         self.audit_records: dict[str, dict] = {}
         self._init_variables()
         self._build_widgets()
@@ -99,19 +114,22 @@ class MonthlyReportApp(BaseWindow):
         self.status = tk.StringVar(value="待機中")
 
     def _build_widgets(self) -> None:
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill=tk.BOTH, expand=True)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        run_tab = ttk.Frame(notebook, padding=12)
-        history_tab = ttk.Frame(notebook, padding=12)
-        audit_tab = ttk.Frame(notebook, padding=12)
-        log_tab = ttk.Frame(notebook, padding=12)
-        notebook.add(run_tab, text="実行")
-        notebook.add(history_tab, text="レポート履歴")
-        notebook.add(audit_tab, text="監査履歴")
-        notebook.add(log_tab, text="ログ")
+        run_tab = ttk.Frame(self.notebook, padding=12)
+        error_tab = ttk.Frame(self.notebook, padding=12)
+        history_tab = ttk.Frame(self.notebook, padding=12)
+        audit_tab = ttk.Frame(self.notebook, padding=12)
+        log_tab = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(run_tab, text="実行")
+        self.notebook.add(error_tab, text="エラー確認")
+        self.notebook.add(history_tab, text="レポート履歴")
+        self.notebook.add(audit_tab, text="監査履歴")
+        self.notebook.add(log_tab, text="ログ")
 
         self._build_run_tab(run_tab)
+        self._build_error_tab(error_tab)
         self._build_history_tab(history_tab)
         self._build_audit_tab(audit_tab)
         self._build_log_tab(log_tab)
@@ -214,6 +232,7 @@ class MonthlyReportApp(BaseWindow):
         open_row = audit_row + 1
         ttk.Button(root, text="Excelレポートを開く", command=self._open_latest_report).grid(row=open_row, column=0, sticky=tk.EW, pady=(0, 8))
         ttk.Button(root, text="出力フォルダを開く", command=self._open_output_folder).grid(row=open_row, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        ttk.Button(root, text="エラーを確認", command=self._review_input_errors).grid(row=open_row, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
 
         drop_row = open_row + 1
         self.drop_label = ttk.Label(root, text="CSV/Excelをここへドロップすると入力フォルダを設定します", relief=tk.GROOVE, anchor=tk.CENTER, padding=16)
@@ -249,6 +268,41 @@ class MonthlyReportApp(BaseWindow):
         history_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.history_list.configure(yscrollcommand=history_scroll.set)
         self._refresh_history()
+
+    def _build_error_tab(self, root: ttk.Frame) -> None:
+        ttk.Label(
+            root,
+            text="入力データの検証エラーを確認できます。エラー内容と修正方法を確認し、CSV / Excelを修正してから再実行してください。",
+            justify=tk.LEFT,
+            wraplength=900,
+        ).pack(fill=tk.X, pady=(0, 8))
+
+        buttons = ttk.Frame(root)
+        buttons.pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(buttons, text="入力データを検証", command=self._review_input_errors).pack(side=tk.LEFT)
+        ttk.Button(buttons, text="エラー行を再読み込み", command=self._review_input_errors).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(buttons, text="エラーCSVを開く", command=self._open_error_csv).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(buttons, text="エラーCSVの保存先を開く", command=self._open_error_csv_folder).pack(side=tk.LEFT, padx=(8, 0))
+
+        self.error_review_status = tk.StringVar(value=NO_VALIDATION_ERRORS_MESSAGE)
+        ttk.Label(root, textvariable=self.error_review_status, justify=tk.LEFT, wraplength=900).pack(fill=tk.X, pady=(0, 8))
+
+        table_frame = ttk.Frame(root)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+        columns = tuple(column for column, _label, _width in ERROR_REVIEW_COLUMNS)
+        self.error_tree = ttk.Treeview(table_frame, columns=columns, show="headings")
+        y_scroll = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.error_tree.yview)
+        x_scroll = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.error_tree.xview)
+        self.error_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        self.error_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        y_scroll.grid(row=0, column=1, sticky=tk.NS)
+        x_scroll.grid(row=1, column=0, sticky=tk.EW)
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        for column, label, width in ERROR_REVIEW_COLUMNS:
+            self.error_tree.heading(column, text=label)
+            self.error_tree.column(column, width=width, minwidth=70, stretch=True)
+        self._set_error_review_rows([])
 
     def _build_audit_tab(self, root: ttk.Frame) -> None:
         ttk.Label(
@@ -1209,6 +1263,82 @@ class MonthlyReportApp(BaseWindow):
             self.output.insert(tk.END, message)
         messagebox.showerror("エラー", message)
 
+    def _error_rows_from_validation_error(self, error: main.DataValidationError) -> list[dict[str, str]]:
+        error_df = main.create_validation_error_rows(error)
+        rows: list[dict[str, str]] = []
+        for record in error_df.to_dict(orient="records"):
+            rows.append({column: "" if record.get(column) is None else str(record.get(column, "")) for column, _label, _width in ERROR_REVIEW_COLUMNS})
+        return rows
+
+    def _set_error_review_rows(self, rows: list[dict[str, str]]) -> None:
+        if not hasattr(self, "error_tree"):
+            return
+        self.error_tree.delete(*self.error_tree.get_children())
+        if not rows:
+            if hasattr(self, "error_review_status"):
+                self.error_review_status.set(NO_VALIDATION_ERRORS_MESSAGE)
+            self.error_tree.insert("", tk.END, values=("", "", "検証エラーはありません", "現在の入力データは正常に読み込めます。", "", "", "", "", "", ""))
+            return
+        if hasattr(self, "error_review_status"):
+            self.error_review_status.set(f"検証エラーが{len(rows)}件あります。エラー内容と修正方法を確認してください。")
+        for row in rows:
+            self.error_tree.insert("", tk.END, values=tuple(row.get(column, "") for column, _label, _width in ERROR_REVIEW_COLUMNS))
+
+    def _select_error_tab(self) -> None:
+        if hasattr(self, "notebook") and hasattr(self, "error_tree"):
+            parent = self.error_tree.winfo_toplevel()
+            for tab_id in self.notebook.tabs():
+                if self.notebook.tab(tab_id, "text") == "エラー確認":
+                    self.notebook.select(tab_id)
+                    break
+
+    def _review_input_errors(self) -> None:
+        if not self._validate_inputs():
+            return
+        try:
+            merged_df = main.read_sales_files(
+                Path(self.input_dir.get().strip() or main.INPUT_DIR),
+                self.pattern.get().strip() or main.DEFAULT_PATTERN,
+            )
+            validated_df = main.validate_data(merged_df, self._column_aliases())
+            main.filter_data(
+                validated_df,
+                month=self._optional(self.month.get()),
+                start_date=self._optional(self.start_date.get()),
+                end_date=self._optional(self.end_date.get()),
+                product=self._optional(self.product.get()),
+                category=self._optional(self.category.get()),
+            )
+            self.latest_error_csv_path = None
+            self._set_error_review_rows([])
+            self.status.set("入力データの検証が完了しました")
+            self._select_error_tab()
+        except main.DataValidationError as exc:
+            output_dir = Path(self.output_dir.get().strip() or main.OUTPUT_DIR)
+            report_file = main.default_error_report_path(output_dir)
+            main.write_validation_error_report(exc, report_file)
+            self.latest_error_csv_path = report_file
+            self._set_error_review_rows(self._error_rows_from_validation_error(exc))
+            self.status.set("入力データに検証エラーがあります")
+            self._select_error_tab()
+        except Exception as exc:
+            self._show_error(main.format_user_error_message(exc))
+
+    def _open_error_csv(self) -> None:
+        if self.latest_error_csv_path is None:
+            self._show_error(NO_ERROR_CSV_MESSAGE)
+            return
+        self._open_report_file(self.latest_error_csv_path)
+
+    def _open_error_csv_folder(self) -> None:
+        if self.latest_error_csv_path is None:
+            self._show_error(NO_ERROR_CSV_MESSAGE)
+            return
+        if not self.latest_error_csv_path.exists():
+            self._show_error("エラーCSVが見つかりません。\n削除または移動された可能性があります。")
+            return
+        self._open_path(self.latest_error_csv_path.parent)
+
     def _show_validation_error(self, error: main.DataValidationError, report_file: Path) -> None:
         message = "\n".join(
             [
@@ -1220,6 +1350,9 @@ class MonthlyReportApp(BaseWindow):
             ]
         )
         self._show_error(message)
+        self.latest_error_csv_path = report_file
+        self._set_error_review_rows(self._error_rows_from_validation_error(error))
+        self._select_error_tab()
         window = tk.Toplevel(self)
         window.title("エラー一覧と修正方法")
         window.geometry("1060x460")
