@@ -669,7 +669,8 @@ def add_total_row(df: pd.DataFrame, label_column: str, total_columns: list[str])
 
 
 def prepare_detail_for_excel(detail_df: pd.DataFrame) -> pd.DataFrame:
-    excel_df = detail_df.copy()
+    detail_columns = [column for column in DETAIL_COLUMN_LABELS if column in detail_df.columns]
+    excel_df = detail_df.loc[:, detail_columns].copy()
     excel_df["date"] = excel_df["date"].dt.strftime("%Y-%m-%d")
     excel_df = excel_df.rename(columns=DETAIL_COLUMN_LABELS)
     return add_total_row(excel_df, excel_df.columns[0], ["数量", "金額"])

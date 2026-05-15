@@ -395,6 +395,29 @@ def test_create_summary_rejects_missing_group_by_column() -> None:
         report.create_summary(df, group_by="category")
 
 
+def test_prepare_detail_for_excel_ignores_input_amount_column() -> None:
+    df = report.validate_data(
+        pd.DataFrame(
+            [
+                {
+                    "日付": "2026-04-01",
+                    "商品名": "オーガニックコーヒー",
+                    "カテゴリ": "飲料",
+                    "数量": "2",
+                    "単価": "780",
+                    "金額": "999999",
+                }
+            ]
+        )
+    )
+
+    excel_df = report.prepare_detail_for_excel(df)
+
+    assert list(excel_df.columns).count("金額") == 1
+    assert excel_df.loc[0, "金額"] == 1560
+    assert excel_df.loc[1, "金額"] == 1560
+
+
 def test_save_to_excel_writes_charts_custom_name_and_conditions(tmp_path: Path) -> None:
     detail_df = report.filter_data(report.validate_data(make_sales_dataframe()), start_date="2026-04-01", end_date="2026-05-31")
     summaries = report.create_summaries(detail_df, "product", all_summaries=True)

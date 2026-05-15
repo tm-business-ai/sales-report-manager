@@ -63,6 +63,13 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1 -InstallDragDrop
 
 `amount` は必須ではありません。数量と単価から自動計算します。
 
+### サンプルデータ
+
+`data/input` には、架空の小売・雑貨店を想定したサンプル売上データがあります。
+`sales_2026_03.csv` と `sales_2026_04.csv`、同内容の `sample_sales_2026_03.xlsx` と `sample_sales_2026_04.xlsx` を用意しています。
+2026年4月を対象月として実行すると、2026年3月との前月比較を確認できます。
+実会社名・個人情報・実売上データは含めていません。
+
 ## 4. GUIでの使い方
 
 GUIは次のコマンドで起動します。
