@@ -209,27 +209,7 @@ Excelレポートは `data/output` に出力されます。
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-## 補助スクリプト
-
-月次実行タスク登録:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\register_monthly_task.ps1 -DayOfMonth 1 -Time 09:00
-```
-
-exeビルド:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
-```
-
-配布パッケージ作成:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1
-```
-
-## ポートフォリオとしての見どころ
+## 設計上のポイント
 
 - Excel作業をPythonで自動化する業務改善ツール
 - 月末処理に必要な集計、比較、確認用シートを一括生成
@@ -237,23 +217,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1
 - 未分類データ・エラー行一覧により確認漏れを防止
 - GUI / CLI の両方に対応
 - pytestで主要処理をテスト
-- GitHub公開を意識し、サンプルデータと出力データを分離
+- サンプルデータと出力データを分離し、利用・確認しやすい構成に整理
 
 ## 注意事項
 
-- 実データ、実会社名、個人情報をGitHubに公開しないでください。
+- 実データ、個人情報、認証情報などはリポジトリに含めないでください。
 - `logs/` と `data/output/` は公開対象外です。
-- `.env` やパスワード、APIキーをコミットしないでください。
-- サンプルデータは架空データを使用してください。
-
-## 関連ドキュメント
-
-- 詳しい操作方法: [docs/operation_manual.md](docs/operation_manual.md)
-- ポートフォリオ説明文: [docs/portfolio_overview.md](docs/portfolio_overview.md)
-- 公開前チェックリスト: [docs/release_checklist.md](docs/release_checklist.md)
-
-## サンプルデータについて
-
-`data/input` には、架空の小売・雑貨店を想定したサンプル売上データを用意しています。
-2026年3月と2026年4月の2か月分があり、2026年4月を対象月として実行すると前月比較を確認できます。
-実会社名・個人情報・実売上データは含めていません。
+- サンプルデータは架空データを使用し、実会社名・個人情報・認証情報は含めないでください。
+- `data/input` には、架空の小売・雑貨店を想定したサンプル売上データを用意しています。
+- 2026年3月と2026年4月の2か月分があり、2026年4月を対象月として実行すると前月比較を確認できます。
+- 詳しい操作方法は [docs/operation_manual.md](docs/operation_manual.md) を参照してください。
+- 利用・配布前の確認項目は [docs/release_checklist.md](docs/release_checklist.md) にまとめています。
