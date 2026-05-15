@@ -2,7 +2,9 @@
 
 ## 1. 起動方法
 
-SalesReportManager.exe をダブルクリックしてください。
+SalesReportManager フォルダを任意の場所に展開し、フォルダ内の SalesReportManager.exe をダブルクリックしてください。
+
+このツールは SalesReportManager フォルダごと使用してください。SalesReportManager.exe だけを別の場所へ移動すると、必要なファイルが見つからず起動できない場合があります。
 
 ## 2. 基本操作
 
@@ -35,3 +37,4 @@ CSVまたはExcelを data/input に入れてください。
 ## 6. 注意事項
 
 実データ、個人情報、認証情報はサンプルフォルダに入れたまま公開しないでください。
+配布や移動を行う場合は、SalesReportManager フォルダ全体をZIP化またはコピーしてください。

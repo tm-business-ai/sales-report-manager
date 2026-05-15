@@ -20,7 +20,7 @@ PyInstallerだけを入れる場合は次のコマンドでも構いません。
 
 ## EXE作成
 
-次のスクリプトで `gui.py` から `dist/SalesReportManager.exe` を作成します。
+次のスクリプトで `gui.py` から onedir 形式の `dist/SalesReportManager/SalesReportManager.exe` を作成します。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
@@ -29,10 +29,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 内部では概ね次の処理を行います。
 
 ```powershell
-.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onefile --noconsole --name SalesReportManager gui.py
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onedir --noconsole --name SalesReportManager gui.py
 ```
 
 PyInstallerが未導入の場合は、先に任意依存をインストールしてください。
+
+このツールは onefile 形式ではなく onedir 形式で配布します。onefile 形式は起動時に `_MEI` 一時フォルダへDLLなどを展開しますが、Windows Defender、社内セキュリティ、Tempフォルダ権限の影響で展開に失敗する場合があります。onedir 形式では必要なDLLやライブラリを配布フォルダ内に置くため、一時展開に依存せず起動できます。
 
 ## 配布パッケージ作成
 
@@ -47,6 +49,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_release_package.ps1
 ```text
 release/SalesReportManager/
 ├─ SalesReportManager.exe
+├─ _internal/
 ├─ README_QUICK_START.txt
 ├─ config.example.json
 ├─ data/
@@ -63,10 +66,13 @@ release/SalesReportManager/
 ## 配布時の注意点
 
 - `release/`, `dist/`, `build/`, `*.spec`, `*.exe` はGitHubに含めません。
+- `release/SalesReportManager` フォルダをZIP化して利用者へ渡してください。
+- `SalesReportManager.exe` だけを単体で別の場所へ移動しないでください。`_internal` などの依存ファイルがないと起動できません。
 - `data/output/` や `logs/` に実行結果やログが残っていないか確認してください。
 - 実データ、個人情報、認証情報を配布フォルダに含めないでください。
 - 配布するサンプルデータは架空データのみ使用してください。
 - Windows Defenderや社内セキュリティソフトで、個人作成EXEとして警告が表示される場合があります。
+- 起動できない場合は、ZIPをフォルダごと展開し直し、展開したフォルダ内の `SalesReportManager.exe` を起動してください。
 
 ## README用画像の更新
 

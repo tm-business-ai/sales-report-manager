@@ -89,7 +89,8 @@ Windows 環境での利用を想定し、CLI と Tkinter GUI の両方から実�
 
 ### EXE配布パッケージ
 
-配布フォルダには、EXE、簡易起動ガイド、設定例、サンプルデータ、操作マニュアルをまとめられます。  
+配布フォルダには、EXE、`_internal` などの依存ファイル、簡易起動ガイド、設定例、サンプルデータ、操作マニュアルをまとめられます。  
+EXE版はフォルダごと配布・使用してください。`SalesReportManager.exe` だけを別の場所へ移動すると起動できない場合があります。
 配布パッケージ構成の画像は、今後追加予定です。撮影手順は [docs/screenshot_guide.md](docs/screenshot_guide.md) を参照してください。
 
 ## 使用技術
@@ -266,7 +267,7 @@ Excelレポートは `data/output` に出力されます。
 .\.venv\Scripts\python.exe gui.py
 ```
 
-Windows向けにEXE化する場合は、任意依存を入れてからビルドスクリプトを実行します。
+Windows向けにEXE化する場合は、任意依存を入れてからビルドスクリプトを実行します。ビルドは PyInstaller の onedir 形式で行い、`dist\SalesReportManager\SalesReportManager.exe` と依存ファイルを作成します。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-optional.txt
@@ -278,6 +279,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_release_package.ps1
 ```
+
+作成された `release\SalesReportManager` フォルダをZIP化して配布してください。`SalesReportManager.exe` 単体ではなく、`_internal` や `data` などを含むフォルダ全体が必要です。
 
 詳しい手順と配布時の注意点は [docs/distribution_guide.md](docs/distribution_guide.md) を参照してください。
 

@@ -29,9 +29,14 @@ if ($PyInstallerExitCode -ne 0) {
     }
 }
 
-& $Python -m PyInstaller --noconfirm --clean --onefile --noconsole --name $AppName gui.py
+$LegacyOneFileExe = Join-Path $ProjectRoot "dist\$AppName.exe"
+if (Test-Path $LegacyOneFileExe) {
+    Remove-Item -LiteralPath $LegacyOneFileExe -Force
+}
 
-$ExePath = Join-Path $ProjectRoot "dist\$AppName.exe"
+& $Python -m PyInstaller --noconfirm --clean --onedir --noconsole --name $AppName gui.py
+
+$ExePath = Join-Path $ProjectRoot "dist\$AppName\$AppName.exe"
 if (-not (Test-Path $ExePath)) {
     throw "Failed to create EXE: $ExePath"
 }

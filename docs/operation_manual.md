@@ -202,8 +202,10 @@ GUIは次のコマンドで起動します。
 
 ## 5. EXE版での使い方
 
-配布版を使う場合は、配布フォルダ内の `SalesReportManager.exe` をダブルクリックして起動します。  
+配布版を使う場合は、`SalesReportManager` フォルダを展開し、フォルダ内の `SalesReportManager.exe` をダブルクリックして起動します。  
 Pythonや仮想環境のコマンドを直接実行しなくてもGUIを開けます。
+
+EXE版はフォルダごと使用してください。`SalesReportManager.exe` だけを別の場所へ移動すると、`_internal` 内のDLLやライブラリが見つからず起動できない場合があります。
 
 EXE版でも、入力フォルダ・出力フォルダ・対象月の指定は通常版と同じです。
 
