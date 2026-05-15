@@ -17,13 +17,26 @@ except ImportError:
 
 BaseWindow = TkinterDnD.Tk if TkinterDnD else tk.Tk
 GUI_STATE_FILE = main.LOG_DIR / "gui_state.json"
+APP_TITLE = "売上データ自動集計・月末売上管理ツール"
+RUN_TAB_DESCRIPTION = (
+    "CSV・Excelの売上データを読み込み、月末確認用のExcelレポートを作成します。\n"
+    "入力データを選び、対象月を指定して、プレビュー確認後にレポートを作成してください。"
+)
+RUN_TAB_STEPS = (
+    "操作手順:\n"
+    "1. 入力フォルダまたは売上ファイルを選択\n"
+    "2. 出力フォルダを確認\n"
+    "3. 対象月を指定\n"
+    "4. プレビューで内容を確認\n"
+    "5. Excelレポートを作成"
+)
 
 
 class MonthlyReportApp(BaseWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Monthly Report Tool")
-        self.geometry("1040x760")
+        self.title(APP_TITLE)
+        self.geometry("1120x860")
         self.resizable(True, True)
         self.report_history: list[Path] = []
         self.audit_records: dict[str, dict] = {}
@@ -88,27 +101,35 @@ class MonthlyReportApp(BaseWindow):
         self._build_log_tab(log_tab)
 
     def _build_run_tab(self, root: ttk.Frame) -> None:
+        intro = ttk.Label(root, text=RUN_TAB_DESCRIPTION, justify=tk.LEFT, wraplength=940)
+        intro.grid(row=0, column=0, columnspan=4, sticky=tk.EW, pady=(0, 8))
+        steps = ttk.Label(root, text=RUN_TAB_STEPS, justify=tk.LEFT, relief=tk.GROOVE, padding=10)
+        steps.grid(row=1, column=0, columnspan=4, sticky=tk.EW, pady=(0, 12))
+
         fields = [
-            ("設定ファイル", self.config_file, self._choose_config_file),
-            ("入力フォルダ", self.input_dir, self._choose_input_dir),
-            ("出力フォルダ", self.output_dir, self._choose_output_dir),
-            ("対象月 YYYY-MM", self.month, None),
-            ("開始日 YYYY-MM-DD", self.start_date, None),
-            ("終了日 YYYY-MM-DD", self.end_date, None),
-            ("商品", self.product, None),
-            ("カテゴリ", self.category, None),
-            ("入力ファイルパターン", self.pattern, None),
-            ("出力ファイル名", self.output_name, None),
-            ("集計CSVフォルダ", self.summary_csv_dir, self._choose_summary_csv_dir),
-            ("通知Webhook URL", self.notify_webhook_url, None),
+            ("設定ファイル", self.config_file, self._choose_config_file, "保存済み設定を使う場合に指定します。"),
+            ("入力フォルダ", self.input_dir, self._choose_input_dir, "CSVまたはExcelファイルを置くフォルダを指定します。ファイル選択もできます。"),
+            ("出力フォルダ", self.output_dir, self._choose_output_dir, "作成したExcelレポートの保存先です。"),
+            ("対象月", self.month, None, "例: 2026-04。月単位で集計する場合に指定します。"),
+            ("開始日", self.start_date, None, "例: 2026-04-01。任意期間で集計する場合に指定します。"),
+            ("終了日", self.end_date, None, "例: 2026-04-30。開始日とセットで使います。"),
+            ("商品名で絞り込み", self.product, None, "空欄の場合はすべての商品を対象にします。"),
+            ("カテゴリで絞り込み", self.category, None, "空欄の場合はすべてのカテゴリを対象にします。"),
+            ("読み込みファイル名パターン", self.pattern, None, "例: sales_*.csv。CSV・Excelの名前規則を指定します。"),
+            ("出力ファイル名", self.output_name, None, "空欄の場合は日時付きのファイル名で自動作成します。"),
+            ("集計CSVフォルダ", self.summary_csv_dir, self._choose_summary_csv_dir, "集計結果CSVも出力したい場合だけ指定します。"),
+            ("通知Webhook URL", self.notify_webhook_url, None, "通知連携を使う場合だけ指定します。"),
         ]
-        for row, (label, variable, command) in enumerate(fields):
+        field_start_row = 2
+        for index, (label, variable, command, help_text) in enumerate(fields):
+            row = field_start_row + index
             ttk.Label(root, text=label).grid(row=row, column=0, sticky=tk.W, pady=4)
             ttk.Entry(root, textvariable=variable).grid(row=row, column=1, sticky=tk.EW, pady=4)
             if command:
                 ttk.Button(root, text="選択", command=command).grid(row=row, column=2, sticky=tk.EW, padx=(8, 0), pady=4)
+            ttk.Label(root, text=help_text, foreground="#555555", wraplength=300).grid(row=row, column=3, sticky=tk.W, padx=(8, 0), pady=4)
 
-        option_row = len(fields)
+        option_row = field_start_row + len(fields)
         ttk.Label(root, text="集計単位").grid(row=option_row, column=0, sticky=tk.W, pady=4)
         ttk.Combobox(root, textvariable=self.group_by, values=["product", "category"], state="readonly").grid(
             row=option_row,
@@ -129,8 +150,8 @@ class MonthlyReportApp(BaseWindow):
         ttk.Checkbutton(checks, text="通知音", variable=self.notify).pack(side=tk.LEFT)
 
         action_row = option_row + 2
-        ttk.Button(root, text="実行", command=self._run_async).grid(row=action_row, column=0, sticky=tk.EW, pady=8)
-        ttk.Button(root, text="CSVプレビュー", command=self._preview).grid(row=action_row, column=1, sticky=tk.EW, padx=(8, 0), pady=8)
+        ttk.Button(root, text="Excelレポートを作成", command=self._run_async).grid(row=action_row, column=0, sticky=tk.EW, pady=8)
+        ttk.Button(root, text="データをプレビュー", command=self._preview).grid(row=action_row, column=1, sticky=tk.EW, padx=(8, 0), pady=8)
         ttk.Button(root, text="集計プレビュー", command=self._summary_preview).grid(row=action_row, column=2, sticky=tk.EW, padx=(8, 0), pady=8)
         ttk.Button(root, text="プリセット適用", command=self._apply_selected_preset).grid(row=action_row, column=3, sticky=tk.EW, padx=(8, 0), pady=8)
 
@@ -188,11 +209,17 @@ class MonthlyReportApp(BaseWindow):
         root.rowconfigure(status_row + 1, weight=1)
 
     def _build_history_tab(self, root: ttk.Frame) -> None:
+        ttk.Label(
+            root,
+            text="作成済みのExcelレポートを確認できます。レポート作成後に一覧へ表示されます。",
+            justify=tk.LEFT,
+            wraplength=900,
+        ).pack(fill=tk.X, pady=(0, 8))
         buttons = ttk.Frame(root)
         buttons.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(buttons, text="更新", command=self._refresh_history).pack(side=tk.LEFT)
+        ttk.Button(buttons, text="履歴を更新", command=self._refresh_history).pack(side=tk.LEFT)
         ttk.Button(buttons, text="詳細", command=self._show_selected_report_detail).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="開く", command=self._open_selected_report).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(buttons, text="レポートを開く", command=self._open_selected_report).pack(side=tk.LEFT, padx=(8, 0))
 
         self.history_list = tk.Listbox(root, height=12)
         self.history_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -200,11 +227,18 @@ class MonthlyReportApp(BaseWindow):
         history_scroll = ttk.Scrollbar(root, orient=tk.VERTICAL, command=self.history_list.yview)
         history_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.history_list.configure(yscrollcommand=history_scroll.set)
+        self._refresh_history()
 
     def _build_audit_tab(self, root: ttk.Frame) -> None:
+        ttk.Label(
+            root,
+            text="実行履歴やエラー内容を確認できます。レポート作成時に問題が起きた場合は、この画面を確認してください。",
+            justify=tk.LEFT,
+            wraplength=900,
+        ).pack(fill=tk.X, pady=(0, 8))
         buttons = ttk.Frame(root)
         buttons.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(buttons, text="更新", command=self._refresh_audit_table).pack(side=tk.LEFT)
+        ttk.Button(buttons, text="履歴を更新", command=self._refresh_audit_table).pack(side=tk.LEFT)
         ttk.Button(buttons, text="CSVエクスポート", command=self._export_audit_csv).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(buttons, text="要約CSV", command=self._export_audit_summary_csv).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(buttons, text="月別要約CSV", command=self._export_audit_monthly_summary_csv).pack(side=tk.LEFT, padx=(8, 0))
@@ -256,6 +290,12 @@ class MonthlyReportApp(BaseWindow):
         self._refresh_audit_table()
 
     def _build_log_tab(self, root: ttk.Frame) -> None:
+        ttk.Label(
+            root,
+            text="実行ログや監査ログの内容を確認できます。エラーが出た場合の原因確認に使用します。",
+            justify=tk.LEFT,
+            wraplength=900,
+        ).pack(fill=tk.X, pady=(0, 8))
         buttons = ttk.Frame(root)
         buttons.pack(fill=tk.X, pady=(0, 8))
         ttk.Button(buttons, text="ログ更新", command=self._refresh_log_text).pack(side=tk.LEFT)
@@ -475,7 +515,7 @@ class MonthlyReportApp(BaseWindow):
             ("入力フォルダ", input_var),
             ("出力フォルダ", output_var),
             ("対象月 YYYY-MM", month_var),
-            ("入力ファイルパターン", pattern_var),
+            ("読み込みファイル名パターン", pattern_var),
             ("出力ファイル名", output_name_var),
         ]
         for row, (label, variable) in enumerate(fields):
@@ -742,7 +782,7 @@ class MonthlyReportApp(BaseWindow):
                 errors.append(f"出力フォルダの親フォルダが見つかりません: {output_path.parent}")
 
         if not pattern:
-            errors.append("入力ファイルパターンを指定してください。")
+            errors.append("読み込みファイル名パターンを指定してください。")
         if group_by not in main.GROUP_BY_COLUMNS:
             errors.append("集計単位は product または category を選択してください。")
 
@@ -770,7 +810,7 @@ class MonthlyReportApp(BaseWindow):
     def _run_async(self) -> None:
         if not self._validate_inputs():
             return
-        self.status.set("実行中")
+        self.status.set("Excelレポートを作成中です...")
         self.output.delete("1.0", tk.END)
         threading.Thread(target=self._run_report, daemon=True).start()
 
@@ -790,7 +830,7 @@ class MonthlyReportApp(BaseWindow):
                 limit=50,
                 column_aliases=self._column_aliases(),
             )
-            self._show_table("CSVプレビュー", preview)
+            self._show_table("データプレビュー", preview)
         except Exception as exc:
             self._show_error(str(exc))
 
@@ -885,24 +925,33 @@ class MonthlyReportApp(BaseWindow):
                 keep_count=self._optional_int(self.audit_keep_count.get()),
                 keep_days=self._optional_int(self.audit_keep_days.get()),
             )
+            previous_rate = (
+                f"{result.previous_month_change_rate:.1%}"
+                if isinstance(result.previous_month_change_rate, (int, float))
+                else str(result.previous_month_change_rate)
+            )
             lines = [
-                "完了しました。",
-                f"明細: {result.detail_count}件",
-                f"集計: {result.summary_count}件",
-                f"売上合計: {result.total_amount:,.0f}",
+                "レポート作成が完了しました。",
+                "",
+                "出力ファイル:",
+                str(result.output_file) if result.output_file else "検証のみのためExcelファイルは作成していません。",
+                "",
+                "集計結果:",
+                f"売上合計: {result.total_amount:,.0f}円",
+                f"明細件数: {result.detail_count:,}件",
                 f"数量合計: {result.total_quantity:,.0f}",
-                f"平均単価: {result.average_unit_price:,.0f}",
+                f"平均単価: {result.average_unit_price:,.0f}円",
                 f"対象日数: {result.target_days}日",
                 f"商品数: {result.product_count}",
                 f"カテゴリ数: {result.category_count}",
-                f"前月売上: {result.previous_month_amount:,.0f}",
-                f"前月比: {result.previous_month_change_rate:.1%}" if isinstance(result.previous_month_change_rate, (int, float)) else f"前月比: {result.previous_month_change_rate}",
-                f"未分類データ: {result.uncategorized_count}件",
-                f"エラー行: {result.error_count}件",
-                f"確認が必要なデータ: {result.uncategorized_count + result.error_count}件",
+                f"前月売上: {result.previous_month_amount:,.0f}円",
+                f"前月比: {previous_rate}",
+                "",
+                "確認事項:",
+                f"未分類データ: {result.uncategorized_count:,}件",
+                f"エラー行: {result.error_count:,}件",
+                f"確認が必要なデータ: {result.uncategorized_count + result.error_count:,}件",
             ]
-            if result.output_file:
-                lines.append(f"出力ファイル: {result.output_file}")
             for summary_csv_file in result.summary_csv_files:
                 lines.append(f"集計CSV: {summary_csv_file}")
             for warning in result.warnings:
@@ -968,7 +1017,7 @@ class MonthlyReportApp(BaseWindow):
             tree.insert("", tk.END, values=row)
 
     def _show_success(self, message: str) -> None:
-        self.status.set("完了")
+        self.status.set("レポート作成が完了しました")
         self.output.insert(tk.END, message)
         self._refresh_history()
         self._refresh_audit_table()
@@ -1006,17 +1055,28 @@ class MonthlyReportApp(BaseWindow):
         output_dir = Path(self.output_dir.get().strip() or main.OUTPUT_DIR)
         if not output_dir.exists() or not output_dir.is_dir():
             self.report_history = []
+            self.history_list.insert(tk.END, "まだ作成済みレポートはありません。実行タブでExcelレポートを作成すると、ここに履歴が表示されます。")
             return
         self.report_history = sorted(output_dir.glob("*.xlsx"), key=lambda path: path.stat().st_mtime, reverse=True)
+        if not self.report_history:
+            self.history_list.insert(tk.END, "まだ作成済みレポートはありません。実行タブでExcelレポートを作成すると、ここに履歴が表示されます。")
+            return
         for report_file in self.report_history:
             self.history_list.insert(tk.END, report_file.name)
 
     def _selected_report(self) -> Path | None:
+        if not self.report_history:
+            self._show_error("まだ作成済みレポートはありません。実行タブでExcelレポートを作成してください。")
+            return None
         selection = self.history_list.curselection()
         if not selection:
             self._show_error("レポートを選択してください。")
             return None
-        return self.report_history[selection[0]]
+        selected_index = selection[0]
+        if selected_index >= len(self.report_history):
+            self._show_error("レポートを選択してください。")
+            return None
+        return self.report_history[selected_index]
 
     def _open_selected_report(self) -> None:
         report_file = self._selected_report()
@@ -1194,6 +1254,12 @@ class MonthlyReportApp(BaseWindow):
                 ),
             )
             self.audit_records[item_id] = record
+        if not filtered_records:
+            self.audit_tree.insert(
+                "",
+                tk.END,
+                values=("", "履歴なし", "", "", "", "", "実行タブでExcelレポートを作成すると、ここに履歴が表示されます。", ""),
+            )
 
     def _filtered_audit_records(self) -> list[dict]:
         return [self.audit_records[item_id] for item_id in self.audit_tree.get_children() if item_id in self.audit_records]
