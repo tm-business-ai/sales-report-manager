@@ -27,6 +27,38 @@ APP_SUCCESS_COLOR = "#2E7D32"
 APP_ERROR_COLOR = "#C0392B"
 PRIMARY_BUTTON_WIDTH = 20
 SECONDARY_BUTTON_WIDTH = 18
+WINDOW_SCREEN_RATIO = 0.9
+WINDOW_MAX_SIZE = (1400, 900)
+WINDOW_MIN_SIZE = (1000, 650)
+RUN_TAB_SCROLLBAR_WIDTH = 16
+BUTTON_GRID_COLUMNS = 4
+BUTTON_GRID_MIN_WIDTH = 180
+CHECKBOX_LABELS = {
+    "all_summaries": "商品別・カテゴリ別集計を出力",
+    "monthly_trend": "月別推移を出力",
+    "charts": "グラフを出力",
+    "dry_run": "検証のみ実行",
+    "notify": "完了時に通知音を鳴らす",
+}
+RUN_ACTION_BUTTONS = (
+    ("Excelレポートを作成", "_run_async"),
+    ("データをプレビュー", "_preview"),
+    ("集計プレビュー", "_summary_preview"),
+    ("プリセット適用", "_apply_selected_preset"),
+    ("設定読込", "_load_config"),
+    ("設定保存", "_save_config"),
+    ("CSVテンプレート作成", "_write_template"),
+    ("タスク登録", "_register_schedule"),
+    ("設定ウィザード", "_open_config_wizard"),
+    ("設定内容チェック", "_review_current_settings"),
+    ("列名設定を開く", "_edit_column_aliases"),
+    ("文字化け修復", "_repair_legacy_text_files"),
+    ("列名候補を更新", "_refresh_column_aliases_from_input"),
+    ("Excel見た目設定", "_edit_style_config"),
+    ("Excelレポートを開く", "_open_latest_report"),
+    ("出力フォルダを開く", "_open_output_folder"),
+    ("エラーを確認", "_review_input_errors"),
+)
 ERROR_DIALOG_SIZE = "1200x700"
 ERROR_DIALOG_MIN_SIZE = (900, 500)
 ERROR_TABLE_DIALOG_SIZE = "1200x700"
@@ -83,7 +115,7 @@ class MonthlyReportApp(BaseWindow):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("1120x860")
+        self._apply_initial_window_size()
         self.resizable(True, True)
         self.report_history: list[Path] = []
         self.latest_report_path: Path | None = None
@@ -94,6 +126,22 @@ class MonthlyReportApp(BaseWindow):
         self._build_widgets()
         self._load_state()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    @staticmethod
+    def _calculate_window_size(screen_width: int, screen_height: int) -> tuple[int, int, int, int]:
+        width = min(WINDOW_MAX_SIZE[0], int(screen_width * WINDOW_SCREEN_RATIO))
+        height = min(WINDOW_MAX_SIZE[1], int(screen_height * WINDOW_SCREEN_RATIO))
+        min_width = min(WINDOW_MIN_SIZE[0], width)
+        min_height = min(WINDOW_MIN_SIZE[1], height)
+        return width, height, min_width, min_height
+
+    def _apply_initial_window_size(self) -> None:
+        width, height, min_width, min_height = self._calculate_window_size(
+            self.winfo_screenwidth(),
+            self.winfo_screenheight(),
+        )
+        self.geometry(f"{width}x{height}")
+        self.minsize(min_width, min_height)
 
     def _configure_style(self) -> None:
         self.configure(bg=APP_BACKGROUND)
@@ -110,17 +158,87 @@ class MonthlyReportApp(BaseWindow):
         style.configure("Success.TLabel", background=APP_BACKGROUND, foreground=APP_SUCCESS_COLOR)
         style.configure("Error.TLabel", background=APP_BACKGROUND, foreground=APP_ERROR_COLOR)
         style.configure("TNotebook", background=APP_BACKGROUND, borderwidth=0)
-        style.configure("TNotebook.Tab", padding=(18, 10), font=("Meiryo", 10))
+        style.configure("TNotebook.Tab", padding=(20, 10), font=("Meiryo", 10))
         style.map(
             "TNotebook.Tab",
             background=[("selected", "#EAF2FB"), ("active", "#F0F5FA")],
             foreground=[("selected", APP_HEADING_COLOR)],
         )
         style.configure("TButton", padding=(8, 6))
+        style.configure("TCheckbutton", background=APP_BACKGROUND, foreground="#1F2933", padding=(2, 2))
         style.configure("Treeview.Heading", font=("Meiryo", 9, "bold"))
 
     def _button(self, parent: tk.Widget, text: str, command, *, width: int = PRIMARY_BUTTON_WIDTH, **kwargs) -> ttk.Button:
         return ttk.Button(parent, text=text, command=command, width=width, **kwargs)
+
+    def _create_scrollable_run_frame(self, parent: ttk.Frame) -> ttk.Frame:
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        canvas = tk.Canvas(parent, background=APP_BACKGROUND, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
+        content = ttk.Frame(canvas, padding=(0, 0, RUN_TAB_SCROLLBAR_WIDTH, 0))
+        window_id = canvas.create_window((0, 0), window=content, anchor=tk.NW)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky=tk.NSEW)
+        scrollbar.grid(row=0, column=1, sticky=tk.NS)
+
+        def update_scroll_region(_event: tk.Event) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def update_content_width(event: tk.Event) -> None:
+            canvas.itemconfigure(window_id, width=event.width)
+
+        content.bind("<Configure>", update_scroll_region)
+        canvas.bind("<Configure>", update_content_width)
+        self._bind_canvas_mousewheel(canvas, content)
+        return content
+
+    def _bind_canvas_mousewheel(self, canvas: tk.Canvas, content: ttk.Frame) -> None:
+        def on_mousewheel(event: tk.Event) -> str:
+            if getattr(event, "num", None) == 4:
+                delta = -1
+            elif getattr(event, "num", None) == 5:
+                delta = 1
+            else:
+                delta = int(-1 * (event.delta / 120))
+            canvas.yview_scroll(delta, "units")
+            return "break"
+
+        def bind_scroll(_event: tk.Event) -> None:
+            canvas.bind_all("<MouseWheel>", on_mousewheel)
+            canvas.bind_all("<Button-4>", on_mousewheel)
+            canvas.bind_all("<Button-5>", on_mousewheel)
+
+        def unbind_scroll(_event: tk.Event) -> None:
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        content._run_tab_mousewheel_handler = on_mousewheel  # type: ignore[attr-defined]
+        content.bind("<Enter>", bind_scroll)
+        content.bind("<Leave>", unbind_scroll)
+        canvas.bind("<Enter>", bind_scroll)
+        canvas.bind("<Leave>", unbind_scroll)
+
+    def _bind_run_tab_child_mousewheel(self, widget: tk.Widget, handler) -> None:
+        for child in widget.winfo_children():
+            child.bind("<MouseWheel>", handler, add="+")
+            child.bind("<Button-4>", handler, add="+")
+            child.bind("<Button-5>", handler, add="+")
+            self._bind_run_tab_child_mousewheel(child, handler)
+
+    def _build_run_action_buttons(self, parent: ttk.Frame) -> None:
+        for column in range(BUTTON_GRID_COLUMNS):
+            parent.columnconfigure(column, weight=1, minsize=BUTTON_GRID_MIN_WIDTH, uniform="run_actions")
+        for index, (text, method_name) in enumerate(RUN_ACTION_BUTTONS):
+            row, column = divmod(index, BUTTON_GRID_COLUMNS)
+            self._button(parent, text=text, command=getattr(self, method_name)).grid(
+                row=row,
+                column=column,
+                sticky=tk.EW,
+                padx=(0 if column == 0 else 8, 0),
+                pady=(0 if row == 0 else 8, 0),
+            )
 
     def _init_variables(self) -> None:
         self.input_dir = tk.StringVar(value=str(main.INPUT_DIR))
@@ -181,6 +299,7 @@ class MonthlyReportApp(BaseWindow):
         self._build_log_tab(log_tab)
 
     def _build_run_tab(self, root: ttk.Frame) -> None:
+        root = self._create_scrollable_run_frame(root)
         intro = ttk.Label(root, text=RUN_TAB_DESCRIPTION, justify=tk.LEFT, wraplength=940, style="Heading.TLabel")
         intro.grid(row=0, column=0, columnspan=4, sticky=tk.EW, pady=(0, 8))
         steps = ttk.Label(root, text=RUN_TAB_STEPS, justify=tk.LEFT, relief=tk.GROOVE, padding=10)
@@ -223,50 +342,18 @@ class MonthlyReportApp(BaseWindow):
 
         checks = ttk.Frame(root)
         checks.grid(row=option_row + 1, column=0, columnspan=4, sticky=tk.W, pady=8)
-        ttk.Checkbutton(checks, text="商品別とカテゴリ別を両方出力", variable=self.all_summaries).pack(side=tk.LEFT, padx=(0, 12))
-        ttk.Checkbutton(checks, text="月別推移", variable=self.monthly_trend).pack(side=tk.LEFT, padx=(0, 12))
-        ttk.Checkbutton(checks, text="グラフ", variable=self.charts).pack(side=tk.LEFT, padx=(0, 12))
-        ttk.Checkbutton(checks, text="検証のみ", variable=self.dry_run).pack(side=tk.LEFT, padx=(0, 12))
-        ttk.Checkbutton(checks, text="通知音", variable=self.notify).pack(side=tk.LEFT)
+        ttk.Checkbutton(checks, text=CHECKBOX_LABELS["all_summaries"], variable=self.all_summaries).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Checkbutton(checks, text=CHECKBOX_LABELS["monthly_trend"], variable=self.monthly_trend).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Checkbutton(checks, text=CHECKBOX_LABELS["charts"], variable=self.charts).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Checkbutton(checks, text=CHECKBOX_LABELS["dry_run"], variable=self.dry_run).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Checkbutton(checks, text=CHECKBOX_LABELS["notify"], variable=self.notify).pack(side=tk.LEFT)
 
-        action_row = option_row + 2
-        self._button(root, text="Excelレポートを作成", command=self._run_async).grid(row=action_row, column=0, sticky=tk.EW, pady=8)
-        self._button(root, text="データをプレビュー", command=self._preview).grid(row=action_row, column=1, sticky=tk.EW, padx=(8, 0), pady=8)
-        self._button(root, text="集計プレビュー", command=self._summary_preview).grid(row=action_row, column=2, sticky=tk.EW, padx=(8, 0), pady=8)
-        self._button(root, text="プリセット適用", command=self._apply_selected_preset).grid(row=action_row, column=3, sticky=tk.EW, padx=(8, 0), pady=8)
-
-        action_row += 1
-        self._button(root, text="設定読込", command=self._load_config).grid(row=action_row, column=0, sticky=tk.EW, pady=(0, 8))
-        self._button(root, text="設定保存", command=self._save_config).grid(row=action_row, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        self._button(root, text="CSVテンプレート作成", command=self._write_template).grid(row=action_row, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        self._button(root, text="タスク登録", command=self._register_schedule).grid(row=action_row, column=3, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-
-        self._button(root, text="設定ウィザード", command=self._open_config_wizard).grid(row=action_row + 1, column=0, sticky=tk.EW, pady=(0, 8))
-
-        self._button(root, text="設定内容チェック", command=self._review_current_settings).grid(row=action_row + 1, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        self._button(root, text="列名設定を開く", command=self._edit_column_aliases).grid(row=action_row + 1, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        self._button(root, text="文字化け修復", command=self._repair_legacy_text_files).grid(row=action_row + 1, column=3, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-
-        schedule_row = action_row + 2
+        schedule_row = option_row + 2
         ttk.Label(root, text="定期実行 日/時刻").grid(row=schedule_row, column=0, sticky=tk.W, pady=(0, 8))
         schedule_frame = ttk.Frame(root)
         schedule_frame.grid(row=schedule_row, column=1, sticky=tk.W, pady=(0, 8))
         ttk.Entry(schedule_frame, textvariable=self.schedule_day, width=5).pack(side=tk.LEFT)
         ttk.Entry(schedule_frame, textvariable=self.schedule_time, width=8).pack(side=tk.LEFT, padx=(8, 0))
-        self._button(root, text="列名候補を更新", command=self._refresh_column_aliases_from_input).grid(
-            row=schedule_row,
-            column=2,
-            sticky=tk.EW,
-            padx=(8, 0),
-            pady=(0, 8),
-        )
-        self._button(root, text="Excel見た目設定", command=self._edit_style_config).grid(
-            row=schedule_row,
-            column=3,
-            sticky=tk.EW,
-            padx=(8, 0),
-            pady=(0, 8),
-        )
 
         audit_row = schedule_row + 1
         ttk.Label(root, text="監査保持 件数/日数").grid(row=audit_row, column=0, sticky=tk.W, pady=(0, 8))
@@ -275,24 +362,27 @@ class MonthlyReportApp(BaseWindow):
         ttk.Entry(audit_frame, textvariable=self.audit_keep_count, width=8).pack(side=tk.LEFT)
         ttk.Entry(audit_frame, textvariable=self.audit_keep_days, width=8).pack(side=tk.LEFT, padx=(8, 0))
 
-        open_row = audit_row + 1
-        self._button(root, text="Excelレポートを開く", command=self._open_latest_report).grid(row=open_row, column=0, sticky=tk.EW, pady=(0, 8))
-        self._button(root, text="出力フォルダを開く", command=self._open_output_folder).grid(row=open_row, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        self._button(root, text="エラーを確認", command=self._review_input_errors).grid(row=open_row, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        action_row = audit_row + 1
+        ttk.Label(root, text="操作", style="Heading.TLabel").grid(row=action_row, column=0, columnspan=4, sticky=tk.W, pady=(8, 4))
+        action_frame = ttk.Frame(root)
+        action_frame.grid(row=action_row + 1, column=0, columnspan=4, sticky=tk.EW, pady=(0, 8))
+        self._build_run_action_buttons(action_frame)
 
-        drop_row = open_row + 1
+        drop_row = action_row + 2
         self.drop_label = ttk.Label(root, text="CSV/Excelをここへドロップすると入力フォルダを設定します", relief=tk.GROOVE, anchor=tk.CENTER, padding=16)
         self.drop_label.grid(row=drop_row, column=0, columnspan=4, sticky=tk.EW, pady=(4, 8))
         self._setup_drop_target()
 
         status_row = drop_row + 1
-        ttk.Label(root, textvariable=self.status).grid(row=status_row, column=0, columnspan=4, sticky=tk.W, pady=(0, 4))
-        self.output = tk.Text(root, height=10)
+        ttk.Label(root, text="結果・エラー表示", style="Heading.TLabel").grid(row=status_row, column=0, sticky=tk.W, pady=(0, 4))
+        ttk.Label(root, textvariable=self.status).grid(row=status_row, column=1, columnspan=3, sticky=tk.W, pady=(0, 4))
+        self.output = tk.Text(root, height=8, wrap=tk.WORD)
         self.output.grid(row=status_row + 1, column=0, columnspan=4, sticky=tk.NSEW, pady=(8, 0))
 
         root.columnconfigure(1, weight=1)
         root.columnconfigure(3, weight=1)
         root.rowconfigure(status_row + 1, weight=1)
+        self._bind_run_tab_child_mousewheel(root, root._run_tab_mousewheel_handler)  # type: ignore[attr-defined]
 
     def _build_history_tab(self, root: ttk.Frame) -> None:
         ttk.Label(

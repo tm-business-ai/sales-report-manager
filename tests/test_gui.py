@@ -13,6 +13,38 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert "unit_price" in gui.MAPPING_REQUIRED_KEYS
     assert gui.PRIMARY_BUTTON_WIDTH == 20
     assert gui.SECONDARY_BUTTON_WIDTH == 18
+    assert gui.WINDOW_SCREEN_RATIO == 0.9
+    assert gui.WINDOW_MAX_SIZE == (1400, 900)
+    assert gui.WINDOW_MIN_SIZE == (1000, 650)
+    assert gui.RUN_TAB_SCROLLBAR_WIDTH == 16
+    assert gui.BUTTON_GRID_COLUMNS == 4
+    assert gui.BUTTON_GRID_MIN_WIDTH == 180
+    assert gui.CHECKBOX_LABELS == {
+        "all_summaries": "商品別・カテゴリ別集計を出力",
+        "monthly_trend": "月別推移を出力",
+        "charts": "グラフを出力",
+        "dry_run": "検証のみ実行",
+        "notify": "完了時に通知音を鳴らす",
+    }
+    assert [text for text, _method_name in gui.RUN_ACTION_BUTTONS] == [
+        "Excelレポートを作成",
+        "データをプレビュー",
+        "集計プレビュー",
+        "プリセット適用",
+        "設定読込",
+        "設定保存",
+        "CSVテンプレート作成",
+        "タスク登録",
+        "設定ウィザード",
+        "設定内容チェック",
+        "列名設定を開く",
+        "文字化け修復",
+        "列名候補を更新",
+        "Excel見た目設定",
+        "Excelレポートを開く",
+        "出力フォルダを開く",
+        "エラーを確認",
+    ]
     assert gui.ERROR_DIALOG_SIZE == "1200x700"
     assert gui.ERROR_DIALOG_MIN_SIZE == (900, 500)
     assert gui.ERROR_TABLE_DIALOG_SIZE == "1200x700"
@@ -56,7 +88,20 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert hasattr(app_class, "_error_rows_from_validation_error")
     assert hasattr(app_class, "_configure_style")
     assert hasattr(app_class, "_button")
+    assert hasattr(app_class, "_calculate_window_size")
+    assert hasattr(app_class, "_apply_initial_window_size")
+    assert hasattr(app_class, "_create_scrollable_run_frame")
+    assert hasattr(app_class, "_bind_canvas_mousewheel")
+    assert hasattr(app_class, "_bind_run_tab_child_mousewheel")
+    assert hasattr(app_class, "_build_run_action_buttons")
     assert hasattr(app_class, "_bind_tree_mousewheel")
+
+
+def test_gui_window_size_is_based_on_screen_size() -> None:
+    app_class = gui.MonthlyReportApp
+
+    assert app_class._calculate_window_size(1920, 1080) == (1400, 900, 1000, 650)
+    assert app_class._calculate_window_size(1024, 768) == (921, 691, 921, 650)
 
 
 def test_gui_column_mapping_helpers_convert_between_shapes() -> None:
