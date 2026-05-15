@@ -19,6 +19,9 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert gui.RUN_TAB_SCROLLBAR_WIDTH == 16
     assert gui.BUTTON_GRID_COLUMNS == 4
     assert gui.BUTTON_GRID_MIN_WIDTH == 180
+    assert gui.HELP_WRAP_LENGTH == 420
+    assert gui.PRESET_COMBO_WIDTH == 45
+    assert gui.PREFERRED_TTK_THEMES == ("vista", "xpnative", "default")
     assert gui.CHECKBOX_LABELS == {
         "all_summaries": "商品別・カテゴリ別集計を出力",
         "monthly_trend": "月別推移を出力",
@@ -26,6 +29,11 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
         "dry_run": "検証のみ実行",
         "notify": "完了時に通知音を鳴らす",
     }
+    assert gui.RUN_TAB_FIELD_HELP_TEXTS["input_dir"] == "CSVまたはExcelファイルを置くフォルダを指定します。\nファイル選択もできます。"
+    assert gui.RUN_TAB_FIELD_HELP_TEXTS["month"] == "例: 2026-04\n月単位で集計する場合に指定します。"
+    assert gui.RUN_TAB_FIELD_HELP_TEXTS["start_date"] == "例: 2026-04-01\n任意期間で集計する場合に指定します。"
+    assert gui.RUN_TAB_FIELD_HELP_TEXTS["end_date"] == "例: 2026-04-30\n開始日とセットで使います。"
+    assert gui.RUN_TAB_FIELD_HELP_TEXTS["pattern"] == "例: sales_*.csv\nCSV・Excelの名前規則を指定します。"
     assert [text for text, _method_name in gui.RUN_ACTION_BUTTONS] == [
         "Excelレポートを作成",
         "データをプレビュー",
@@ -87,7 +95,9 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert hasattr(app_class, "_set_error_review_rows")
     assert hasattr(app_class, "_error_rows_from_validation_error")
     assert hasattr(app_class, "_configure_style")
+    assert hasattr(app_class, "_apply_preferred_theme")
     assert hasattr(app_class, "_button")
+    assert hasattr(app_class, "_help_label")
     assert hasattr(app_class, "_calculate_window_size")
     assert hasattr(app_class, "_apply_initial_window_size")
     assert hasattr(app_class, "_create_scrollable_run_frame")
@@ -95,6 +105,22 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert hasattr(app_class, "_bind_run_tab_child_mousewheel")
     assert hasattr(app_class, "_build_run_action_buttons")
     assert hasattr(app_class, "_bind_tree_mousewheel")
+
+    class FakeStyle:
+        def __init__(self, themes: list[str]) -> None:
+            self._themes = themes
+            self.used_theme: str | None = None
+
+        def theme_names(self) -> tuple[str, ...]:
+            return tuple(self._themes)
+
+        def theme_use(self, theme: str | None = None) -> str:
+            if theme is not None:
+                self.used_theme = theme
+            return self.used_theme or self._themes[0]
+
+    assert app_class._apply_preferred_theme(FakeStyle(["clam", "vista"])) == "vista"
+    assert app_class._apply_preferred_theme(FakeStyle(["clam", "default"])) == "default"
 
 
 def test_gui_window_size_is_based_on_screen_size() -> None:

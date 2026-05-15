@@ -27,18 +27,35 @@ APP_SUCCESS_COLOR = "#2E7D32"
 APP_ERROR_COLOR = "#C0392B"
 PRIMARY_BUTTON_WIDTH = 20
 SECONDARY_BUTTON_WIDTH = 18
+HELP_WRAP_LENGTH = 420
+PRESET_COMBO_WIDTH = 45
 WINDOW_SCREEN_RATIO = 0.9
 WINDOW_MAX_SIZE = (1400, 900)
 WINDOW_MIN_SIZE = (1000, 650)
 RUN_TAB_SCROLLBAR_WIDTH = 16
 BUTTON_GRID_COLUMNS = 4
 BUTTON_GRID_MIN_WIDTH = 180
+PREFERRED_TTK_THEMES = ("vista", "xpnative", "default")
 CHECKBOX_LABELS = {
     "all_summaries": "商品別・カテゴリ別集計を出力",
     "monthly_trend": "月別推移を出力",
     "charts": "グラフを出力",
     "dry_run": "検証のみ実行",
     "notify": "完了時に通知音を鳴らす",
+}
+RUN_TAB_FIELD_HELP_TEXTS = {
+    "config_file": "保存済み設定を使う場合に指定します。",
+    "input_dir": "CSVまたはExcelファイルを置くフォルダを指定します。\nファイル選択もできます。",
+    "output_dir": "作成したExcelレポートの保存先です。",
+    "month": "例: 2026-04\n月単位で集計する場合に指定します。",
+    "start_date": "例: 2026-04-01\n任意期間で集計する場合に指定します。",
+    "end_date": "例: 2026-04-30\n開始日とセットで使います。",
+    "product": "空欄の場合はすべての商品を対象にします。",
+    "category": "空欄の場合はすべてのカテゴリを対象にします。",
+    "pattern": "例: sales_*.csv\nCSV・Excelの名前規則を指定します。",
+    "output_name": "空欄の場合は日時付きのファイル名で自動作成します。",
+    "summary_csv_dir": "集計結果CSVも出力したい場合だけ指定します。",
+    "notify_webhook_url": "通知連携を使う場合だけ指定します。",
 }
 RUN_ACTION_BUTTONS = (
     ("Excelレポートを作成", "_run_async"),
@@ -146,10 +163,7 @@ class MonthlyReportApp(BaseWindow):
     def _configure_style(self) -> None:
         self.configure(bg=APP_BACKGROUND)
         style = ttk.Style(self)
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
+        self._apply_preferred_theme(style)
         style.configure(".", font=("Meiryo", 9))
         style.configure("TFrame", background=APP_BACKGROUND)
         style.configure("TLabel", background=APP_BACKGROUND, foreground="#1F2933")
@@ -168,8 +182,31 @@ class MonthlyReportApp(BaseWindow):
         style.configure("TCheckbutton", background=APP_BACKGROUND, foreground="#1F2933", padding=(2, 2))
         style.configure("Treeview.Heading", font=("Meiryo", 9, "bold"))
 
+    @staticmethod
+    def _apply_preferred_theme(style: ttk.Style) -> str:
+        available_themes = {theme.lower(): theme for theme in style.theme_names()}
+        for theme_name in PREFERRED_TTK_THEMES:
+            matched = available_themes.get(theme_name)
+            if matched:
+                style.theme_use(matched)
+                return matched
+        current_theme = style.theme_use()
+        if current_theme:
+            return current_theme
+        return style.theme_use(PREFERRED_TTK_THEMES[-1])
+
     def _button(self, parent: tk.Widget, text: str, command, *, width: int = PRIMARY_BUTTON_WIDTH, **kwargs) -> ttk.Button:
         return ttk.Button(parent, text=text, command=command, width=width, **kwargs)
+
+    def _help_label(self, parent: tk.Widget, text: str) -> ttk.Label:
+        return ttk.Label(
+            parent,
+            text=text,
+            wraplength=HELP_WRAP_LENGTH,
+            justify=tk.LEFT,
+            anchor=tk.W,
+            style="Help.TLabel",
+        )
 
     def _create_scrollable_run_frame(self, parent: ttk.Frame) -> ttk.Frame:
         parent.rowconfigure(0, weight=1)
@@ -300,24 +337,24 @@ class MonthlyReportApp(BaseWindow):
 
     def _build_run_tab(self, root: ttk.Frame) -> None:
         root = self._create_scrollable_run_frame(root)
-        intro = ttk.Label(root, text=RUN_TAB_DESCRIPTION, justify=tk.LEFT, wraplength=940, style="Heading.TLabel")
+        intro = ttk.Label(root, text=RUN_TAB_DESCRIPTION, justify=tk.LEFT, anchor=tk.W, wraplength=940, style="Heading.TLabel")
         intro.grid(row=0, column=0, columnspan=4, sticky=tk.EW, pady=(0, 8))
-        steps = ttk.Label(root, text=RUN_TAB_STEPS, justify=tk.LEFT, relief=tk.GROOVE, padding=10)
+        steps = ttk.Label(root, text=RUN_TAB_STEPS, justify=tk.LEFT, anchor=tk.W, relief=tk.GROOVE, padding=10)
         steps.grid(row=1, column=0, columnspan=4, sticky=tk.EW, pady=(0, 12))
 
         fields = [
-            ("設定ファイル", self.config_file, self._choose_config_file, "保存済み設定を使う場合に指定します。"),
-            ("入力フォルダ", self.input_dir, self._choose_input_dir, "CSVまたはExcelファイルを置くフォルダを指定します。ファイル選択もできます。"),
-            ("出力フォルダ", self.output_dir, self._choose_output_dir, "作成したExcelレポートの保存先です。"),
-            ("対象月", self.month, None, "例: 2026-04。月単位で集計する場合に指定します。"),
-            ("開始日", self.start_date, None, "例: 2026-04-01。任意期間で集計する場合に指定します。"),
-            ("終了日", self.end_date, None, "例: 2026-04-30。開始日とセットで使います。"),
-            ("商品名で絞り込み", self.product, None, "空欄の場合はすべての商品を対象にします。"),
-            ("カテゴリで絞り込み", self.category, None, "空欄の場合はすべてのカテゴリを対象にします。"),
-            ("読み込みファイル名パターン", self.pattern, None, "例: sales_*.csv。CSV・Excelの名前規則を指定します。"),
-            ("出力ファイル名", self.output_name, None, "空欄の場合は日時付きのファイル名で自動作成します。"),
-            ("集計CSVフォルダ", self.summary_csv_dir, self._choose_summary_csv_dir, "集計結果CSVも出力したい場合だけ指定します。"),
-            ("通知Webhook URL", self.notify_webhook_url, None, "通知連携を使う場合だけ指定します。"),
+            ("設定ファイル", self.config_file, self._choose_config_file, RUN_TAB_FIELD_HELP_TEXTS["config_file"]),
+            ("入力フォルダ", self.input_dir, self._choose_input_dir, RUN_TAB_FIELD_HELP_TEXTS["input_dir"]),
+            ("出力フォルダ", self.output_dir, self._choose_output_dir, RUN_TAB_FIELD_HELP_TEXTS["output_dir"]),
+            ("対象月", self.month, None, RUN_TAB_FIELD_HELP_TEXTS["month"]),
+            ("開始日", self.start_date, None, RUN_TAB_FIELD_HELP_TEXTS["start_date"]),
+            ("終了日", self.end_date, None, RUN_TAB_FIELD_HELP_TEXTS["end_date"]),
+            ("商品名で絞り込み", self.product, None, RUN_TAB_FIELD_HELP_TEXTS["product"]),
+            ("カテゴリで絞り込み", self.category, None, RUN_TAB_FIELD_HELP_TEXTS["category"]),
+            ("読み込みファイル名パターン", self.pattern, None, RUN_TAB_FIELD_HELP_TEXTS["pattern"]),
+            ("出力ファイル名", self.output_name, None, RUN_TAB_FIELD_HELP_TEXTS["output_name"]),
+            ("集計CSVフォルダ", self.summary_csv_dir, self._choose_summary_csv_dir, RUN_TAB_FIELD_HELP_TEXTS["summary_csv_dir"]),
+            ("通知Webhook URL", self.notify_webhook_url, None, RUN_TAB_FIELD_HELP_TEXTS["notify_webhook_url"]),
         ]
         field_start_row = 2
         for index, (label, variable, command, help_text) in enumerate(fields):
@@ -326,7 +363,7 @@ class MonthlyReportApp(BaseWindow):
             ttk.Entry(root, textvariable=variable).grid(row=row, column=1, sticky=tk.EW, pady=4)
             if command:
                 self._button(root, text="選択", command=command, width=SECONDARY_BUTTON_WIDTH).grid(row=row, column=2, sticky=tk.EW, padx=(8, 0), pady=4)
-            ttk.Label(root, text=help_text, wraplength=300, style="Help.TLabel").grid(row=row, column=3, sticky=tk.W, padx=(8, 0), pady=4)
+            self._help_label(root, help_text).grid(row=row, column=3, sticky=tk.W, padx=(8, 0), pady=4)
 
         option_row = field_start_row + len(fields)
         ttk.Label(root, text="集計単位").grid(row=option_row, column=0, sticky=tk.W, pady=4)
@@ -337,8 +374,8 @@ class MonthlyReportApp(BaseWindow):
             pady=4,
         )
         ttk.Label(root, text="プリセット").grid(row=option_row, column=2, sticky=tk.W, padx=(8, 0), pady=4)
-        self.preset_combo = ttk.Combobox(root, textvariable=self.preset, values=[], state="readonly", width=24)
-        self.preset_combo.grid(row=option_row, column=3, sticky=tk.EW, pady=4)
+        self.preset_combo = ttk.Combobox(root, textvariable=self.preset, values=[], state="readonly", width=PRESET_COMBO_WIDTH)
+        self.preset_combo.grid(row=option_row, column=3, sticky=tk.W, pady=4)
 
         checks = ttk.Frame(root)
         checks.grid(row=option_row + 1, column=0, columnspan=4, sticky=tk.W, pady=8)
@@ -380,7 +417,7 @@ class MonthlyReportApp(BaseWindow):
         self.output.grid(row=status_row + 1, column=0, columnspan=4, sticky=tk.NSEW, pady=(8, 0))
 
         root.columnconfigure(1, weight=1)
-        root.columnconfigure(3, weight=1)
+        root.columnconfigure(3, weight=0)
         root.rowconfigure(status_row + 1, weight=1)
         self._bind_run_tab_child_mousewheel(root, root._run_tab_mousewheel_handler)  # type: ignore[attr-defined]
 
