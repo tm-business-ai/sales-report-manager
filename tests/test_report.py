@@ -104,6 +104,36 @@ def test_read_sales_files_supports_xlsx_column_aliases(tmp_path: Path) -> None:
     assert validated_df.loc[0, "category"] == "fruit"
 
 
+def test_read_sales_columns_reads_first_input_file_columns(tmp_path: Path) -> None:
+    write_csv(tmp_path / "sales_2026_04.csv", ["売上日,品名,商品分類,販売数,販売単価", "2026-04-01,apple,fruit,10,120"])
+
+    columns = report.read_sales_columns(tmp_path, pattern="sales_*.csv")
+
+    assert columns == ("売上日", "品名", "商品分類", "販売数", "販売単価")
+
+
+def test_infer_column_aliases_supports_common_japanese_names() -> None:
+    aliases = report.infer_column_aliases(("売上日", "品名", "商品分類", "販売数", "販売単価", "売上金額"))
+
+    assert aliases == {
+        "売上日": "date",
+        "品名": "product",
+        "商品分類": "category",
+        "販売数": "quantity",
+        "販売単価": "unit_price",
+        "売上金額": "amount",
+    }
+
+
+def test_missing_required_column_labels_uses_aliases() -> None:
+    columns = ("売上日", "品名", "販売数")
+    aliases = report.infer_column_aliases(columns)
+
+    missing = report.missing_required_column_labels(columns, aliases)
+
+    assert missing == ["単価"]
+
+
 def test_read_sales_files_rejects_explicit_unsupported_file(tmp_path: Path) -> None:
     text_file = tmp_path / "sales.txt"
     text_file.write_text("date,product,quantity,unit_price\n", encoding="utf-8")

@@ -30,6 +30,15 @@ RUN_TAB_STEPS = (
     "4. プレビューで内容を確認\n"
     "5. Excelレポートを作成"
 )
+MAPPING_STANDARD_LABELS = {
+    "date": "日付",
+    "product": "商品名",
+    "category": "カテゴリ",
+    "quantity": "数量",
+    "unit_price": "単価",
+    "amount": "金額",
+}
+MAPPING_REQUIRED_KEYS = ("date", "product", "quantity", "unit_price")
 
 
 class MonthlyReportApp(BaseWindow):
@@ -164,7 +173,8 @@ class MonthlyReportApp(BaseWindow):
         ttk.Button(root, text="設定ウィザード", command=self._open_config_wizard).grid(row=action_row + 1, column=0, sticky=tk.EW, pady=(0, 8))
 
         ttk.Button(root, text="設定内容チェック", command=self._review_current_settings).grid(row=action_row + 1, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        ttk.Button(root, text="文字化け修復", command=self._repair_legacy_text_files).grid(row=action_row + 1, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        ttk.Button(root, text="列名設定を開く", command=self._edit_column_aliases).grid(row=action_row + 1, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        ttk.Button(root, text="文字化け修復", command=self._repair_legacy_text_files).grid(row=action_row + 1, column=3, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
 
         schedule_row = action_row + 2
         ttk.Label(root, text="定期実行 日/時刻").grid(row=schedule_row, column=0, sticky=tk.W, pady=(0, 8))
@@ -172,7 +182,7 @@ class MonthlyReportApp(BaseWindow):
         schedule_frame.grid(row=schedule_row, column=1, sticky=tk.W, pady=(0, 8))
         ttk.Entry(schedule_frame, textvariable=self.schedule_day, width=5).pack(side=tk.LEFT)
         ttk.Entry(schedule_frame, textvariable=self.schedule_time, width=8).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(root, text="列名マッピング", command=self._edit_column_aliases).grid(
+        ttk.Button(root, text="列名候補を更新", command=self._refresh_column_aliases_from_input).grid(
             row=schedule_row,
             column=2,
             sticky=tk.EW,
@@ -590,6 +600,74 @@ class MonthlyReportApp(BaseWindow):
             raise ValueError("列名マッピングはJSONオブジェクトで指定してください。")
         return {str(source).strip(): str(target).strip() for source, target in value.items() if str(source).strip()}
 
+    def _standard_to_source_mapping(self, aliases: dict[str, str] | None = None) -> dict[str, str]:
+        standard_to_source = {key: "" for key in MAPPING_STANDARD_LABELS}
+        for source, standard in (aliases or self._column_aliases()).items():
+            if standard in standard_to_source:
+                standard_to_source[standard] = source
+        return standard_to_source
+
+    def _aliases_from_standard_mapping(self, standard_to_source: dict[str, str]) -> dict[str, str]:
+        return {
+            source.strip(): standard
+            for standard, source in standard_to_source.items()
+            if standard in MAPPING_STANDARD_LABELS and source and source.strip()
+        }
+
+    def _read_input_columns(self) -> tuple[str, ...]:
+        return main.read_sales_columns(
+            Path(self.input_dir.get().strip() or main.INPUT_DIR),
+            self.pattern.get().strip() or main.DEFAULT_PATTERN,
+        )
+
+    def _missing_required_mapping_labels(self, columns: tuple[str, ...] | None = None) -> list[str]:
+        if columns is None:
+            columns = self._read_input_columns()
+        return main.missing_required_column_labels(columns, self._column_aliases())
+
+    def _ensure_column_mapping_ready(self) -> bool:
+        try:
+            columns = self._read_input_columns()
+            missing_labels = self._missing_required_mapping_labels(columns)
+        except Exception:
+            return True
+        if not missing_labels:
+            return True
+        self._show_error(
+            "\n".join(
+                [
+                    "列名設定が不足しています。",
+                    "",
+                    "未設定の項目:",
+                    *[f"- {label}" for label in missing_labels],
+                    "",
+                    "入力ファイルの列名を確認し、列名マッピングを設定してください。",
+                ]
+            )
+        )
+        return False
+
+    def _refresh_column_aliases_from_input(self) -> None:
+        try:
+            columns = self._read_input_columns()
+            inferred = main.infer_column_aliases(columns)
+            current = self._column_aliases()
+            current.update(inferred)
+            self.column_aliases_json.set(json.dumps(current, ensure_ascii=False, indent=2))
+            self._save_state()
+            missing = main.missing_required_column_labels(columns, current)
+            if missing:
+                self._show_error(
+                    "列名候補を取得しましたが、未設定の項目があります。\n\n"
+                    + "\n".join(f"- {label}" for label in missing)
+                    + "\n\n列名設定を開いて、入力ファイルの列名を選択してください。"
+                )
+                return
+            self.status.set("入力ファイルの列名候補を取得しました")
+            messagebox.showinfo("完了", "入力ファイルの列名候補を取得し、自動推定した列名設定を反映しました。")
+        except Exception as exc:
+            self._show_error(main.format_user_error_message(exc))
+
     def _warning_amount_threshold(self) -> float:
         try:
             value = float(self.warning_amount_threshold.get())
@@ -618,27 +696,100 @@ class MonthlyReportApp(BaseWindow):
 
     def _edit_column_aliases(self) -> None:
         window = tk.Toplevel(self)
-        window.title("列名マッピング")
-        window.geometry("620x420")
-        text = tk.Text(window, height=16)
-        text.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
-        text.insert(tk.END, self.column_aliases_json.get())
+        window.title("列名マッピング設定")
+        window.geometry("760x440")
+
+        ttk.Label(
+            window,
+            text="入力ファイルの列名を、レポート作成で使う標準項目に対応させます。列名が標準と違う場合に設定してください。",
+            justify=tk.LEFT,
+            wraplength=700,
+        ).pack(fill=tk.X, padx=12, pady=(12, 8))
+
+        columns_var = tk.StringVar(value="列名候補: 未取得")
+        ttk.Label(window, textvariable=columns_var, wraplength=700, foreground="#555555").pack(fill=tk.X, padx=12, pady=(0, 8))
+
+        mapping_frame = ttk.Frame(window)
+        mapping_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+        ttk.Label(mapping_frame, text="標準項目").grid(row=0, column=0, sticky=tk.W, pady=(0, 6))
+        ttk.Label(mapping_frame, text="入力ファイルの列名").grid(row=0, column=1, sticky=tk.W, pady=(0, 6))
+
+        current_mapping = self._standard_to_source_mapping()
+        selected_columns = {key: tk.StringVar(value=current_mapping.get(key, "")) for key in MAPPING_STANDARD_LABELS}
+        combos: dict[str, ttk.Combobox] = {}
+        candidate_columns: list[str] = []
+
+        def set_candidates(columns: tuple[str, ...]) -> None:
+            nonlocal candidate_columns
+            candidate_columns = list(columns)
+            values = [""] + candidate_columns
+            columns_var.set("列名候補: " + (", ".join(candidate_columns) if candidate_columns else "候補がありません"))
+            for combo in combos.values():
+                combo.configure(values=values)
+
+        for row, key in enumerate(MAPPING_STANDARD_LABELS, start=1):
+            required_mark = " *" if key in MAPPING_REQUIRED_KEYS else ""
+            ttk.Label(mapping_frame, text=f"{MAPPING_STANDARD_LABELS[key]}{required_mark}").grid(row=row, column=0, sticky=tk.W, pady=4)
+            combo = ttk.Combobox(mapping_frame, textvariable=selected_columns[key], values=[""], state="readonly")
+            combo.grid(row=row, column=1, sticky=tk.EW, pady=4, padx=(8, 0))
+            combos[key] = combo
+
+        mapping_frame.columnconfigure(1, weight=1)
+
+        def apply_inferred(columns: tuple[str, ...]) -> None:
+            inferred = main.infer_column_aliases(columns)
+            standard_to_source = self._standard_to_source_mapping(inferred)
+            for key, value in standard_to_source.items():
+                if value:
+                    selected_columns[key].set(value)
+
+        def read_columns() -> None:
+            try:
+                columns = self._read_input_columns()
+                set_candidates(columns)
+                apply_inferred(columns)
+                self.status.set("入力ファイルの列名候補を取得しました")
+            except Exception as exc:
+                self._show_error(main.format_user_error_message(exc))
+
+        def reset_to_standard() -> None:
+            standard_names = tuple(MAPPING_STANDARD_LABELS)
+            set_candidates(standard_names)
+            for key in MAPPING_STANDARD_LABELS:
+                selected_columns[key].set(key)
 
         def save() -> None:
-            try:
-                value = json.loads(text.get("1.0", tk.END))
-                if not isinstance(value, dict):
-                    raise ValueError("JSONオブジェクトで指定してください。")
-                self.column_aliases_json.set(json.dumps(value, ensure_ascii=False, indent=2))
-                self._save_state()
-                window.destroy()
-            except Exception as exc:
-                self._show_error(str(exc))
+            mapping = {key: selected_columns[key].get() for key in MAPPING_STANDARD_LABELS}
+            aliases = self._aliases_from_standard_mapping(mapping)
+            missing = [MAPPING_STANDARD_LABELS[key] for key in MAPPING_REQUIRED_KEYS if not mapping.get(key)]
+            if missing:
+                self._show_error(
+                    "列名設定が不足しています。\n\n"
+                    "未設定の項目:\n"
+                    + "\n".join(f"- {label}" for label in missing)
+                    + "\n\n入力ファイルの列名を確認し、列名マッピングを設定してください。"
+                )
+                return
+            self.column_aliases_json.set(json.dumps(aliases, ensure_ascii=False, indent=2))
+            self._save_state()
+            self.status.set("列名設定を保存しました")
+            messagebox.showinfo("完了", "列名設定を保存しました。次回のプレビュー・レポート作成に反映されます。")
+            window.destroy()
+
+        try:
+            columns = self._read_input_columns()
+            set_candidates(columns)
+            if not any(current_mapping.values()):
+                apply_inferred(columns)
+        except Exception:
+            set_candidates(())
 
         buttons = ttk.Frame(window)
         buttons.pack(fill=tk.X, padx=12, pady=(0, 12))
+        ttk.Button(buttons, text="入力ファイルの列名を読み取る", command=read_columns).pack(side=tk.LEFT)
         ttk.Button(buttons, text="プリセット", command=self._edit_column_alias_presets).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="保存", command=save).pack(side=tk.RIGHT)
+        ttk.Button(buttons, text="初期設定に戻す", command=reset_to_standard).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(buttons, text="列名設定を保存", command=save).pack(side=tk.RIGHT)
         ttk.Button(buttons, text="キャンセル", command=window.destroy).pack(side=tk.RIGHT, padx=(0, 8))
 
     def _edit_column_alias_presets(self) -> None:
@@ -810,12 +961,16 @@ class MonthlyReportApp(BaseWindow):
     def _run_async(self) -> None:
         if not self._validate_inputs():
             return
+        if not self._ensure_column_mapping_ready():
+            return
         self.status.set("Excelレポートを作成中です...")
         self.output.delete("1.0", tk.END)
         threading.Thread(target=self._run_report, daemon=True).start()
 
     def _preview(self) -> None:
         if not self._validate_inputs():
+            return
+        if not self._ensure_column_mapping_ready():
             return
         try:
             preview = main.build_preview(
@@ -836,6 +991,8 @@ class MonthlyReportApp(BaseWindow):
 
     def _summary_preview(self) -> None:
         if not self._validate_inputs():
+            return
+        if not self._ensure_column_mapping_ready():
             return
         try:
             preview = main.build_summary_preview(

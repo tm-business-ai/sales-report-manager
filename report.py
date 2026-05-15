@@ -19,6 +19,15 @@ REQUIRED_COLUMN_LABELS = {
     "amount": "金額",
 }
 REQUIRED_COLUMN_EXAMPLES = ["日付", "商品名", "カテゴリ", "数量", "単価", "金額"]
+STANDARD_COLUMN_ORDER = ["date", "product", "category", "quantity", "unit_price", "amount"]
+COLUMN_CANDIDATES = {
+    "date": ("date", "日付", "売上日", "販売日", "取引日"),
+    "product": ("product", "商品名", "商品", "品名"),
+    "category": ("category", "カテゴリ", "カテゴリー", "分類", "商品分類"),
+    "quantity": ("quantity", "数量", "個数", "販売数"),
+    "unit_price": ("unit_price", "単価", "販売単価"),
+    "amount": ("amount", "金額", "売上金額", "税込金額", "売上"),
+}
 COLUMN_ALIASES = {
     "date": "date",
     "日付": "date",
@@ -26,15 +35,24 @@ COLUMN_ALIASES = {
     "product": "product",
     "商品": "product",
     "商品名": "product",
+    "品名": "product",
     "quantity": "quantity",
     "数量": "quantity",
+    "個数": "quantity",
+    "販売数": "quantity",
     "unit_price": "unit_price",
     "単価": "unit_price",
+    "販売単価": "unit_price",
     "amount": "amount",
     "金額": "amount",
+    "売上金額": "amount",
+    "税込金額": "amount",
+    "売上": "amount",
     "category": "category",
     "カテゴリ": "category",
     "カテゴリー": "category",
+    "分類": "category",
+    "商品分類": "category",
 }
 GROUP_BY_COLUMNS = {"product": "商品別", "category": "カテゴリ別"}
 DETAIL_COLUMN_LABELS = {
@@ -100,6 +118,31 @@ def merge_column_aliases(column_aliases: dict | None) -> dict:
         for source_column, target_column in column_aliases.items():
             merged[str(source_column).strip()] = str(target_column).strip()
     return merged
+
+
+def _normalize_column_name(value: object) -> str:
+    return str(value).strip().lower()
+
+
+def infer_column_aliases(columns: list[str] | tuple[str, ...]) -> dict[str, str]:
+    """Return source-column -> standard-column aliases inferred from common names."""
+    normalized_sources = {_normalize_column_name(column): str(column).strip() for column in columns}
+    aliases: dict[str, str] = {}
+    used_sources: set[str] = set()
+    for standard_column in STANDARD_COLUMN_ORDER:
+        for candidate in COLUMN_CANDIDATES[standard_column]:
+            source = normalized_sources.get(_normalize_column_name(candidate))
+            if source and source not in used_sources:
+                aliases[source] = standard_column
+                used_sources.add(source)
+                break
+    return aliases
+
+
+def missing_required_column_labels(columns: list[str] | tuple[str, ...], column_aliases: dict | None = None) -> list[str]:
+    aliases = merge_column_aliases(column_aliases)
+    mapped_columns = {aliases.get(str(column).strip()) for column in columns}
+    return [REQUIRED_COLUMN_LABELS[column] for column in REQUIRED_COLUMNS if column not in mapped_columns]
 
 
 @dataclass(frozen=True)
@@ -295,6 +338,12 @@ def read_sales_files(input_path: Path, pattern: str = "*.csv", *, excel_sheet_na
     merged_df = pd.concat(dataframes, ignore_index=True)
     merged_df.attrs["source_files"] = [file.name for file in input_files]
     return merged_df
+
+
+def read_sales_columns(input_path: Path, pattern: str = "*.csv", *, excel_sheet_name: int | str = 0) -> tuple[str, ...]:
+    input_files = find_sales_files(input_path, pattern)
+    df = read_sales_file(input_files[0], excel_sheet_name=excel_sheet_name)
+    return tuple(str(column) for column in df.columns)
 
 
 def read_csv_files(input_dir: Path, pattern: str = "*.csv") -> pd.DataFrame:

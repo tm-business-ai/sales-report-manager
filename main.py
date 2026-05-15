@@ -15,6 +15,9 @@ from urllib import request
 from report import (
     DataValidationError,
     GROUP_BY_COLUMNS,
+    REQUIRED_COLUMN_LABELS,
+    REQUIRED_COLUMNS,
+    STANDARD_COLUMN_ORDER,
     cleanup_old_reports,
     create_daily_trend,
     create_month_end_summary,
@@ -25,6 +28,9 @@ from report import (
     create_summaries,
     filter_data,
     format_validation_issues,
+    infer_column_aliases,
+    missing_required_column_labels,
+    read_sales_columns,
     read_sales_files,
     save_to_excel,
     validate_data,
@@ -705,6 +711,13 @@ def write_input_template(output_file: Path) -> Path:
         writer.writerow(["date", "product", "category", "quantity", "unit_price"])
         writer.writerow(["2026-04-01", "sample product", "sample category", "1", "100"])
     return output_file
+
+
+def build_column_mapping_preview(input_dir: Path, pattern: str = DEFAULT_PATTERN) -> dict[str, Any]:
+    columns = read_sales_columns(input_dir, pattern)
+    aliases = infer_column_aliases(columns)
+    missing_labels = missing_required_column_labels(columns, aliases)
+    return {"columns": columns, "column_aliases": aliases, "missing_required_labels": tuple(missing_labels)}
 
 
 def post_webhook_notification(webhook_url: str, message: str, status: str) -> None:

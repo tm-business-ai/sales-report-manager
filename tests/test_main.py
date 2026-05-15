@@ -511,6 +511,22 @@ def test_build_preview_accepts_configured_column_aliases(tmp_path: Path) -> None
     assert preview.rows[0][preview.columns.index("product")] == "apple"
 
 
+def test_build_column_mapping_preview_reads_and_infers_columns(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    (input_dir / "sales.csv").write_text(
+        "売上日,品名,商品分類,販売数,販売単価,売上金額\n2026-04-01,apple,fruit,10,120,1200\n",
+        encoding="utf-8",
+    )
+
+    preview = main.build_column_mapping_preview(input_dir, pattern="sales*.csv")
+
+    assert preview["columns"] == ("売上日", "品名", "商品分類", "販売数", "販売単価", "売上金額")
+    assert preview["column_aliases"]["売上日"] == "date"
+    assert preview["column_aliases"]["品名"] == "product"
+    assert preview["missing_required_labels"] == ()
+
+
 def test_build_summary_preview_returns_summary_rows(tmp_path: Path) -> None:
     input_dir = tmp_path / "input"
     input_dir.mkdir()
