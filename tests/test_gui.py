@@ -7,6 +7,7 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert gui.APP_TITLE == "売上データ自動集計・月末売上管理ツール"
     assert "月末確認用のExcelレポート" in gui.RUN_TAB_DESCRIPTION
     assert "Excelレポートを作成" in gui.RUN_TAB_STEPS
+    assert hasattr(gui.main, "format_user_error_message")
     assert hasattr(app_class, "_edit_style_config")
     assert hasattr(app_class, "_edit_column_alias_presets")
     assert hasattr(app_class, "_open_config_wizard")

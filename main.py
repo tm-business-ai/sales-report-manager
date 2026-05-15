@@ -24,6 +24,7 @@ from report import (
     create_validation_error_rows,
     create_summaries,
     filter_data,
+    format_validation_issues,
     read_sales_files,
     save_to_excel,
     validate_data,
@@ -313,7 +314,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--all-summaries", action="store_true", default=None, help="商品別とカテゴリ別の集計シートを両方出力します。")
     parser.add_argument("--monthly-trend", action="store_true", default=None, help="月別推移シートを出力します。")
     parser.add_argument("--charts", action="store_true", default=None, help="Excelにグラフを追加します。")
-    parser.add_argument("--input-dir", type=Path, default=None, help=f"入力CSVフォルダを指定します。既定値は {INPUT_DIR} です。")
+    parser.add_argument("--input-dir", type=Path, default=None, help=f"入力CSV / Excelフォルダを指定します。既定値は {INPUT_DIR} です。")
     parser.add_argument("--output-dir", type=Path, default=None, help=f"Excel出力フォルダを指定します。既定値は {OUTPUT_DIR} です。")
     parser.add_argument("--output-name", default=None, help="出力Excelファイル名を指定します。")
     parser.add_argument("--pattern", default=None, help='読み込む入力ファイルのパターンを指定します。対応形式は .csv / .xlsx / .xls です。既定値は "*.csv" です。')
@@ -496,18 +497,57 @@ def check_environment(
 def get_recovery_hint(exc: Exception) -> str:
     message = str(exc)
     if isinstance(exc, DataValidationError):
-        return "CSVの該当行を修正してください。--error-report を指定するとエラー一覧CSVを出力できます。"
-    if "入力フォルダが見つかりません" in message:
-        return "--input-dir のパス、または設定ファイルの input_dir を確認してください。"
-    if "読み込み対象のCSVファイル" in message:
-        return "入力ファイル名、--pattern、sample_ で始まっていないかを確認してください。対応形式は .csv / .xlsx / .xls です。"
+        return (
+            "CSVまたはExcelの該当行を修正してください。"
+            "--error-report を指定すると、エラー一覧CSVに修正方法を出力できます。"
+        )
+    if "入力フォルダが見つかりません" in message or "読み込み対象の売上データが見つかりません" in message:
+        return (
+            "入力フォルダ、data/input内のファイル、読み込みファイル名パターンを確認してください。"
+            "例: sales_*.csv / sales_*.xlsx"
+        )
     if "同時に指定できません" in message:
-        return "--month か --start-date/--end-date のどちらか一方を指定してください。"
-    if "指定条件に一致するデータ" in message:
-        return "日付範囲、商品名、カテゴリ名がCSVの値と一致しているか確認してください。"
+        return "対象月、または開始日・終了日のどちらか一方だけを指定してください。"
+    if "開始日が終了日より後" in message:
+        return "開始日を終了日以前にしてください。例: 開始日 2026-04-01 / 終了日 2026-04-30"
+    if "対象月に一致する売上データ" in message or "指定条件に一致する売上データ" in message:
+        return "対象月、日付列、商品名、カテゴリ名、読み込みファイル名パターンを確認してください。"
+    if "古いExcel形式" in message or "xlrd" in message:
+        return "Excelで .xlsx 形式に保存し直すか、requirements-optional.txt の内容をインストールしてください。"
     if "設定ファイル" in message or "preset" in message:
         return "config.example.json を参考に、設定キー、型、preset名を確認してください。"
-    return "ログファイルの詳細を確認し、入力CSVと実行オプションを見直してください。"
+    return "ログファイルの詳細を確認し、入力CSV/Excelと実行オプションを見直してください。"
+
+
+def format_user_error_message(exc: Exception) -> str:
+    if isinstance(exc, DataValidationError):
+        lines = [
+            "売上データの内容に修正が必要です。",
+            "",
+            "確認してください:",
+            "- CSV / Excelの列名が正しいか",
+            "- 日付、数量、単価、金額に不正な値がないか",
+            "- エラー一覧CSVまたは画面の修正方法を確認してください",
+            "",
+            "詳細:",
+        ]
+        lines.extend(format_validation_issues(exc.issues, limit=5))
+        return "\n".join(lines)
+    return "\n".join(
+        [
+            "レポート作成中にエラーが発生しました。",
+            "",
+            "確認してください:",
+            "- 入力フォルダに売上データがあるか",
+            "- 対象月が正しいか",
+            "- CSV / Excelの列名が正しいか",
+            "- 日付、数量、単価、金額に不正な値がないか",
+            "- 読み込みファイル名パターンが正しいか",
+            "",
+            f"詳細: {exc}",
+            f"対処: {get_recovery_hint(exc)}",
+        ]
+    )
 
 
 def validate_month(month: str | None) -> str | None:
@@ -525,9 +565,15 @@ def validate_options(month: str | None, start_date: str | None, end_date: str | 
     start = validate_date_option(start_date, "--start-date")
     end = validate_date_option(end_date, "--end-date")
     if month and (start_date or end_date):
-        raise ValueError("--month と --start-date/--end-date は同時に指定できません。")
+        raise ValueError("対象月と開始日・終了日は同時に指定できません。対象月または期間指定のどちらか一方を使ってください。")
     if start is not None and end is not None and start > end:
-        raise ValueError("開始日が終了日より後になっています。開始日と終了日を確認してください。")
+        raise ValueError(
+            "開始日が終了日より後になっています。\n\n"
+            "開始日と終了日を確認してください。\n\n"
+            "修正例:\n"
+            "開始日: 2026-04-01\n"
+            "終了日: 2026-04-30"
+        )
     if group_by not in GROUP_BY_COLUMNS:
         raise ValueError(f"--group-by は product または category を指定してください: {group_by}")
 
@@ -623,7 +669,7 @@ def build_summary_preview(
 def inspect_report_warnings(detail_df, *, high_amount_threshold: float = 1_000_000) -> tuple[str, ...]:
     warnings: list[str] = []
     if len(detail_df) == 0:
-        warnings.append("出力対象の明細が0件です。条件または入力CSVを確認してください。")
+        warnings.append("出力対象の明細が0件です。条件または入力CSV / Excelを確認してください。")
         return tuple(warnings)
 
     if "category" in detail_df.columns:
@@ -1506,7 +1552,7 @@ def main() -> int:
 
     except DataValidationError as exc:
         logging.exception("CSV検証エラーが発生しました。")
-        print("CSV検証エラーが発生しました。入力CSVを修正してください。")
+        print(format_user_error_message(exc))
         print(f"ログファイル: {LOG_FILE.resolve()}")
         error_report = options.get("error_report") if "options" in locals() else None
         if error_report:
@@ -1522,8 +1568,6 @@ def main() -> int:
             )
             if options.get("notify"):
                 notify_completion("レポート作成に失敗しました。", options.get("notify_webhook_url"), "validation_error")
-        print(f"詳細: {exc}")
-        print(f"対処: {get_recovery_hint(exc)}")
         return 1
     except Exception as exc:
         logging.exception("エラーが発生しました。")
@@ -1537,10 +1581,8 @@ def main() -> int:
             )
             if options.get("notify"):
                 notify_completion("レポート作成に失敗しました。", options.get("notify_webhook_url"), "error")
-        print("エラーが発生しました。内容を確認して入力CSVまたは実行オプションを修正してください。")
+        print(format_user_error_message(exc))
         print(f"ログファイル: {LOG_FILE.resolve()}")
-        print(f"詳細: {exc}")
-        print(f"対処: {get_recovery_hint(exc)}")
         return 1
 
 

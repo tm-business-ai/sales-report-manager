@@ -55,8 +55,12 @@ def test_read_csv_files_supports_cp932_input(tmp_path: Path) -> None:
 def test_read_csv_files_reports_no_target_csv(tmp_path: Path) -> None:
     write_csv(tmp_path / "sample_sales.csv", ["date,product,quantity,unit_price", "2026-04-01,サンプル,99,999"])
 
-    with pytest.raises(FileNotFoundError, match="読み込み対象のCSVファイル"):
+    with pytest.raises(FileNotFoundError, match="読み込み対象の売上データ") as exc_info:
         report.read_csv_files(tmp_path)
+
+    message = str(exc_info.value)
+    assert "確認してください" in message
+    assert "sales_*.csv" in message
 
 
 def test_read_sales_files_supports_xlsx_and_pattern_expansion(tmp_path: Path) -> None:
@@ -164,10 +168,25 @@ def test_validate_data_accepts_custom_column_aliases() -> None:
     assert validated_df.loc[0, "amount"] == 1200
 
 
+def test_validate_data_missing_columns_has_user_friendly_guidance() -> None:
+    df = pd.DataFrame([{"数量": "1", "単価": "100"}])
+
+    with pytest.raises(report.DataValidationError) as exc_info:
+        report.validate_data(df)
+
+    message = str(exc_info.value)
+    assert "売上データに必要な列が不足" in message
+    assert "不足している列" in message
+    assert "日付" in message
+    assert "商品名" in message
+    assert "必要な列の例" in message
+    assert "修正方法" in message
+
+
 def test_validate_data_collects_multiple_errors_and_writes_report(tmp_path: Path) -> None:
     df = pd.DataFrame(
         [
-            {"date": "2026/04/01", "product": "りんご", "quantity": "bad", "unit_price": "-120"},
+            {"date": "2026/99/99", "product": "りんご", "quantity": "bad", "unit_price": "-120"},
             {"date": "2026-04-02", "product": "みかん", "quantity": "-1", "unit_price": "bad"},
         ]
     )
@@ -176,15 +195,29 @@ def test_validate_data_collects_multiple_errors_and_writes_report(tmp_path: Path
         report.validate_data(df)
 
     message = str(exc_info.value)
-    assert "日付に不正な値" in message
-    assert "数量に不正な値" in message
-    assert "単価に不正な値" in message
+    assert "日付として読み取れない値" in message
+    assert "2026/99/99" in message
+    assert "数量に数値以外の値" in message
+    assert "単価に数値以外の値" in message
     assert "数量にマイナス" in message
     assert "単価にマイナス" in message
+    assert "修正方法" in message
 
     output_file = report.write_validation_error_report(exc_info.value, tmp_path / "errors.csv")
     error_df = pd.read_csv(output_file)
+    assert "fix" in error_df.columns
+    assert any("数量には" in value for value in error_df["fix"])
     assert set(error_df["issue"]) == {"invalid_date", "invalid_quantity", "negative_unit_price", "negative_quantity", "invalid_unit_price"}
+
+
+def test_validate_data_reports_invalid_amount_when_amount_column_exists() -> None:
+    df = pd.DataFrame([{"日付": "2026-04-01", "商品名": "りんご", "数量": "1", "単価": "100", "金額": "abc"}])
+
+    with pytest.raises(report.DataValidationError) as exc_info:
+        report.validate_data(df)
+
+    assert "金額に数値以外の値" in str(exc_info.value)
+    assert "金額列を使う場合" in str(exc_info.value)
 
 
 def test_filter_data_supports_date_range_product_and_category() -> None:
@@ -208,6 +241,18 @@ def test_filter_data_rejects_start_date_after_end_date() -> None:
 
     with pytest.raises(ValueError, match="開始日が終了日より後"):
         report.filter_data(df, start_date="2026-04-30", end_date="2026-04-01")
+
+
+def test_filter_data_no_month_data_has_confirmation_points() -> None:
+    df = report.validate_data(make_sales_dataframe())
+
+    with pytest.raises(ValueError) as exc_info:
+        report.filter_data(df, month="2026-06")
+
+    message = str(exc_info.value)
+    assert "対象月に一致する売上データがありません" in message
+    assert "確認してください" in message
+    assert "対象月: 2026-06" in message
 
 
 def test_create_summary_monthly_trend_and_summary_csv(tmp_path: Path) -> None:
@@ -478,6 +523,60 @@ def test_save_to_excel_writes_charts_custom_name_and_conditions(tmp_path: Path) 
     assert len(workbook["商品別集計"]._charts) == 1
     assert len(workbook["日別推移"]._charts) == 1
     assert len(workbook["月別推移"]._charts) == 1
+
+
+def test_prepare_validation_errors_for_excel_includes_fix_column() -> None:
+    error = report.DataValidationError(
+        [
+            report.ValidationIssue(
+                "invalid_quantity",
+                "数量に数値以外の値があります。不正な値: abc",
+                "sales.csv",
+                2,
+                "数量には 1、2、10 のような0以上の数値を入力してください。",
+            )
+        ]
+    )
+
+    excel_df = report.prepare_validation_errors_for_excel(report.create_validation_error_rows(error))
+
+    assert "修正方法" in excel_df.columns
+    assert excel_df.loc[0, "エラー内容"].startswith("数量に数値以外")
+    assert "数量には" in excel_df.loc[0, "修正方法"]
+
+
+def test_save_to_excel_writes_validation_error_fix_column(tmp_path: Path) -> None:
+    detail_df = report.filter_data(report.validate_data(make_sales_dataframe()), month="2026-04")
+    summaries = report.create_summaries(detail_df, "product", all_summaries=False)
+    error = report.DataValidationError(
+        [
+            report.ValidationIssue(
+                "invalid_date",
+                "日付として読み取れない値があります。不正な値: 2026/99/99",
+                "sales.csv",
+                2,
+                "日付列を 2026-04-01 または 2026/04/01 のような形式に修正してください。",
+            )
+        ]
+    )
+
+    output_file = report.save_to_excel(
+        detail_df,
+        summaries,
+        tmp_path,
+        "2026-04",
+        "product",
+        input_dir=tmp_path / "input",
+        pattern="sales*.csv",
+        validation_error_df=report.create_validation_error_rows(error),
+    )
+
+    workbook = load_workbook(output_file, data_only=True)
+    sheet = workbook["エラー行一覧"]
+    headers = [sheet.cell(row=3, column=column).value for column in range(1, 6)]
+
+    assert "修正方法" in headers
+    assert sheet.cell(row=4, column=headers.index("修正方法") + 1).value.startswith("日付列を")
 
 
 def test_cleanup_old_reports_keeps_newest_reports(tmp_path: Path) -> None:

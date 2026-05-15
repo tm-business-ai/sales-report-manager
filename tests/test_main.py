@@ -36,6 +36,15 @@ def test_validate_options_rejects_start_date_after_end_date() -> None:
         main.validate_options(None, "2026-04-30", "2026-04-01", "product")
 
 
+def test_validate_options_start_date_after_end_date_has_fix_example() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        main.validate_options(None, "2026-04-30", "2026-04-01", "product")
+
+    message = str(exc_info.value)
+    assert "修正例" in message
+    assert "2026-04-01" in message
+
+
 def test_load_config_merges_preset_and_validates_unknown_key(tmp_path: Path) -> None:
     config_file = tmp_path / "config.json"
     config_file.write_text(
@@ -168,7 +177,7 @@ def test_append_audit_log_writes_rerun_options_and_warnings(tmp_path: Path) -> N
         detail_count=0,
         summary_count=0,
         dry_run=True,
-        warnings=("出力対象の明細が0件です。条件または入力CSVを確認してください。",),
+        warnings=("出力対象の明細が0件です。条件または入力CSV / Excelを確認してください。",),
     )
 
     log_file = main.append_audit_log(
@@ -527,6 +536,23 @@ def test_build_summary_preview_returns_summary_rows(tmp_path: Path) -> None:
     assert preview.summaries["daily"].total_count == 3
 
 
+def test_build_preview_no_matching_month_has_confirmation_points(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    (input_dir / "sales.csv").write_text(
+        "date,product,category,quantity,unit_price\n2026-04-01,apple,fruit,10,120\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        main.build_preview(input_dir=input_dir, month="2026-05", group_by="product", pattern="sales*.csv")
+
+    message = str(exc_info.value)
+    assert "対象月に一致する売上データがありません" in message
+    assert "確認してください" in message
+    assert "対象月: 2026-05" in message
+
+
 def test_inspect_report_warnings_reports_empty_missing_category_and_high_amount() -> None:
     import pandas as pd
 
@@ -726,7 +752,11 @@ def test_main_writes_error_report(
 
     assert exit_code == 1
     assert "エラー一覧CSV:" in captured.out
+    assert "売上データの内容に修正が必要" in captured.out
     assert error_report.exists()
+    rows = list(csv.DictReader(error_report.open(encoding="utf-8-sig", newline="")))
+    assert "fix" in rows[0]
+    assert rows[0]["fix"]
 
 
 def test_main_error_prints_log_file_path(
@@ -746,6 +776,15 @@ def test_main_error_prints_log_file_path(
     assert "ログファイル:" in captured.out
     assert str(log_file.resolve()) in captured.out
     assert "入力フォルダが見つかりません" in captured.out
+    assert "確認してください" in captured.out
+
+
+def test_format_user_error_message_contains_common_checks() -> None:
+    message = main.format_user_error_message(FileNotFoundError("読み込み対象の売上データが見つかりません。"))
+
+    assert "レポート作成中にエラーが発生しました" in message
+    assert "入力フォルダに売上データがあるか" in message
+    assert "読み込みファイル名パターン" in message
 
 
 def test_repair_legacy_text_files_updates_json_and_jsonl(tmp_path: Path) -> None:

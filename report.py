@@ -10,6 +10,15 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 
 REQUIRED_COLUMNS = ["date", "product", "quantity", "unit_price"]
+REQUIRED_COLUMN_LABELS = {
+    "date": "日付",
+    "product": "商品名",
+    "category": "カテゴリ",
+    "quantity": "数量",
+    "unit_price": "単価",
+    "amount": "金額",
+}
+REQUIRED_COLUMN_EXAMPLES = ["日付", "商品名", "カテゴリ", "数量", "単価", "金額"]
 COLUMN_ALIASES = {
     "date": "date",
     "日付": "date",
@@ -21,6 +30,8 @@ COLUMN_ALIASES = {
     "数量": "quantity",
     "unit_price": "unit_price",
     "単価": "unit_price",
+    "amount": "amount",
+    "金額": "amount",
     "category": "category",
     "カテゴリ": "category",
     "カテゴリー": "category",
@@ -97,6 +108,7 @@ class ValidationIssue:
     message: str
     source_file: str
     source_row: int | None
+    fix: str = ""
 
 
 class DataValidationError(ValueError):
@@ -111,7 +123,10 @@ def format_validation_issues(issues: list[ValidationIssue], limit: int = 20) -> 
         location = issue.source_file
         if issue.source_row is not None:
             location = f"{location}:{issue.source_row}"
-        lines.append(f"{issue.message} 該当行: {location}")
+        line = f"{issue.message} 該当行: {location}"
+        if issue.fix:
+            line = f"{line}\n修正方法: {issue.fix}"
+        lines.append(line)
     extra_count = max(len(issues) - limit, 0)
     if extra_count:
         lines.append(f"ほか{extra_count}件のエラーがあります。")
@@ -124,6 +139,7 @@ def write_validation_error_report(error: DataValidationError, output_file: Path)
         {
             "issue": issue.issue,
             "message": issue.message,
+            "fix": issue.fix,
             "source_file": issue.source_file,
             "source_row": issue.source_row,
         }
@@ -134,7 +150,7 @@ def write_validation_error_report(error: DataValidationError, output_file: Path)
 
 
 def create_validation_error_rows(error: DataValidationError | None = None) -> pd.DataFrame:
-    columns = ["source_file", "source_row", "message", "date", "product", "category", "quantity", "unit_price", "amount"]
+    columns = ["source_file", "source_row", "message", "fix", "date", "product", "category", "quantity", "unit_price", "amount"]
     if error is None:
         return pd.DataFrame(columns=columns)
     rows = [
@@ -142,6 +158,7 @@ def create_validation_error_rows(error: DataValidationError | None = None) -> pd
             "source_file": issue.source_file,
             "source_row": issue.source_row,
             "message": issue.message,
+            "fix": issue.fix,
             "date": "",
             "product": "",
             "category": "",
@@ -179,7 +196,14 @@ def _expand_input_patterns(pattern: str) -> tuple[str, ...]:
 
 def find_sales_files(input_path: Path, pattern: str = "*.csv") -> list[Path]:
     if not input_path.exists():
-        raise FileNotFoundError(f"入力フォルダが見つかりません: {input_path}")
+        raise FileNotFoundError(
+            "入力フォルダが見つかりません。\n\n"
+            f"指定された場所: {input_path}\n\n"
+            "確認してください:\n"
+            "- 入力フォルダが正しいか\n"
+            "- data/input にCSVまたはExcelファイルがあるか\n"
+            "- フォルダ名やパスに入力間違いがないか"
+        )
 
     if input_path.is_file():
         if input_path.suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
@@ -204,26 +228,45 @@ def find_sales_files(input_path: Path, pattern: str = "*.csv") -> list[Path]:
     input_files = sorted(files_by_path.values(), key=lambda path: path.name)
     if not input_files:
         raise FileNotFoundError(
-            "読み込み対象の売上ファイルが見つかりません。"
-            f"入力フォルダ: {input_path}。"
-            f"ファイル名パターン: {pattern}。"
-            "対応形式は .csv / .xlsx / .xls です。"
-            "sample_ で始まるファイルはサンプルとして除外されます。"
+            "読み込み対象の売上データが見つかりません。\n\n"
+            "確認してください:\n"
+            "- 入力フォルダが正しいか\n"
+            "- data/input にCSVまたはExcelファイルがあるか\n"
+            "- 読み込みファイル名パターンが正しいか\n\n"
+            f"入力フォルダ: {input_path}\n"
+            f"読み込みファイル名パターン: {pattern}\n\n"
+            "例:\n"
+            "sales_*.csv\n"
+            "sales_*.xlsx\n\n"
+            "対応形式は .csv / .xlsx / .xls です。sample_ で始まるファイルはサンプルとして除外されます。"
         )
     return input_files
 
 
 def read_excel_file(file: Path, sheet_name: int | str = 0) -> pd.DataFrame:
     suffix = file.suffix.lower()
-    if suffix == ".xlsx":
-        return pd.read_excel(file, sheet_name=sheet_name, engine="openpyxl")
-    if suffix == ".xls":
-        if importlib.util.find_spec("xlrd") is None:
-            raise ImportError(
-                "古いExcel形式（.xls）を読み込むには xlrd が必要です。"
-                "xlsx形式で保存し直すか、requirements-optional.txt の内容をインストールしてください。"
-            )
-        return pd.read_excel(file, sheet_name=sheet_name, engine="xlrd")
+    try:
+        if suffix == ".xlsx":
+            return pd.read_excel(file, sheet_name=sheet_name, engine="openpyxl")
+        if suffix == ".xls":
+            if importlib.util.find_spec("xlrd") is None:
+                raise ImportError(
+                    "古いExcel形式（.xls）を読み込むには追加ライブラリ xlrd が必要です。\n\n"
+                    "修正方法:\n"
+                    "- 可能であれば、Excelで .xlsx 形式に保存し直してから読み込んでください。\n"
+                    "- .xls のまま使う場合は、requirements-optional.txt の内容をインストールしてください。"
+                )
+            return pd.read_excel(file, sheet_name=sheet_name, engine="xlrd")
+    except ImportError:
+        raise
+    except Exception as exc:
+        raise ValueError(
+            f"Excelファイルを読み込めませんでした: {file.name}\n\n"
+            "確認してください:\n"
+            "- ファイルが壊れていないか\n"
+            "- Excelで開いたままになっていないか\n"
+            "- CSVまたは .xlsx 形式で保存し直せるか"
+        ) from exc
     raise ValueError(f"Excelファイルではありません: {file.name}")
 
 
@@ -265,9 +308,15 @@ def read_csv_files(input_dir: Path, pattern: str = "*.csv") -> pd.DataFrame:
     )
     if not csv_files:
         raise FileNotFoundError(
-            "読み込み対象のCSVファイルが見つかりません。"
-            f"入力フォルダ: {input_dir}。"
-            f"ファイル名パターン: {pattern}。"
+            "読み込み対象の売上データが見つかりません。\n\n"
+            "確認してください:\n"
+            "- 入力フォルダが正しいか\n"
+            "- data/input にCSVファイルがあるか\n"
+            "- 読み込みファイル名パターンが正しいか\n\n"
+            f"入力フォルダ: {input_dir}\n"
+            f"読み込みファイル名パターン: {pattern}\n\n"
+            "例:\n"
+            "sales_*.csv\n\n"
             "sample_ で始まるCSVはサンプルとして除外されます。"
         )
 
@@ -300,6 +349,7 @@ def normalize_columns(df: pd.DataFrame, column_aliases: dict | None = None) -> p
                     f"同じ意味の列が重複しています。どちらか一方にしてください: {mapped_columns[normalized_column]}, {column}",
                     "-",
                     None,
+                    "CSVまたはExcelの1行目を確認し、同じ意味の列を1つだけ残してください。",
                 )
             )
         mapped_columns[normalized_column] = column
@@ -310,52 +360,131 @@ def normalize_columns(df: pd.DataFrame, column_aliases: dict | None = None) -> p
     return normalized_df.rename(columns=rename_map)
 
 
-def make_issue(row: pd.Series, issue: str, message: str, fallback_index: int) -> ValidationIssue:
+def make_issue(row: pd.Series, issue: str, message: str, fallback_index: int, fix: str = "") -> ValidationIssue:
     source_file = row.get("source_file")
     source_row = row.get("source_row")
     if pd.isna(source_file):
         source_file = "-"
     source_row_value = fallback_index + 2 if pd.isna(source_row) else int(source_row)
-    return ValidationIssue(issue, message, str(source_file), source_row_value)
+    return ValidationIssue(issue, message, str(source_file), source_row_value, fix)
+
+
+def _sample_invalid_values(values: pd.Series, limit: int = 3) -> str:
+    samples = []
+    for value in values:
+        if pd.isna(value):
+            samples.append("空欄")
+        else:
+            text = str(value).strip()
+            samples.append(text if text else "空欄")
+        if len(samples) >= limit:
+            break
+    return "、".join(samples)
 
 
 def validate_data(df: pd.DataFrame, column_aliases: dict | None = None) -> pd.DataFrame:
     df = normalize_columns(df, column_aliases)
     missing_columns = [col for col in REQUIRED_COLUMNS if col not in df.columns]
     if missing_columns:
+        missing_labels = [REQUIRED_COLUMN_LABELS.get(column, column) for column in missing_columns]
         raise DataValidationError(
             [
                 ValidationIssue(
                     "missing_column",
-                    f"必須列が不足しています。不足列: {', '.join(missing_columns)}。必要な列: {', '.join(REQUIRED_COLUMNS)}",
+                    "売上データに必要な列が不足しています。\n\n"
+                    "不足している列:\n"
+                    + "\n".join(f"- {label}" for label in missing_labels)
+                    + "\n\n必要な列の例:\n"
+                    + "\n".join(f"- {label}" for label in REQUIRED_COLUMN_EXAMPLES),
                     "-",
                     None,
+                    "CSVまたはExcelの1行目に、必要な列名を追加してください。日本語列名にも対応しています。",
                 )
             ]
         )
 
     validated_df = df.copy()
     date_text = validated_df["date"].astype("string").str.strip()
-    invalid_date_format = ~date_text.str.fullmatch(r"\d{4}-\d{2}-\d{2}", na=False)
-    validated_df["date"] = pd.to_datetime(date_text, format="%Y-%m-%d", errors="coerce")
-    validated_df["quantity"] = pd.to_numeric(validated_df["quantity"], errors="coerce")
-    validated_df["unit_price"] = pd.to_numeric(validated_df["unit_price"], errors="coerce")
+    validated_df["_raw_date"] = date_text
+    validated_df["_raw_quantity"] = validated_df["quantity"].astype("string").str.strip()
+    validated_df["_raw_unit_price"] = validated_df["unit_price"].astype("string").str.strip()
+    if "amount" in validated_df.columns:
+        validated_df["_raw_amount"] = validated_df["amount"].astype("string").str.strip()
+
+    parsed_date = pd.to_datetime(date_text, format="%Y-%m-%d", errors="coerce")
+    slash_date = pd.to_datetime(date_text, format="%Y/%m/%d", errors="coerce")
+    parsed_date = parsed_date.fillna(slash_date)
+    validated_df["date"] = parsed_date
+    validated_df["quantity"] = pd.to_numeric(validated_df["_raw_quantity"], errors="coerce")
+    validated_df["unit_price"] = pd.to_numeric(validated_df["_raw_unit_price"], errors="coerce")
+    amount_numeric = pd.to_numeric(validated_df["_raw_amount"], errors="coerce") if "_raw_amount" in validated_df.columns else None
 
     issues = []
-    for index, row in validated_df[invalid_date_format | validated_df["date"].isna()].iterrows():
-        issues.append(make_issue(row, "invalid_date", "日付に不正な値があります。YYYY-MM-DD 形式で入力してください。", index))
+    invalid_dates = validated_df[validated_df["date"].isna()]
+    for index, row in invalid_dates.iterrows():
+        value = row.get("_raw_date") or "空欄"
+        issues.append(
+            make_issue(
+                row,
+                "invalid_date",
+                f"日付として読み取れない値があります。不正な値: {value}",
+                index,
+                "日付列を 2026-04-01 または 2026/04/01 のような形式に修正してください。",
+            )
+        )
     for index, row in validated_df[validated_df["quantity"].isna()].iterrows():
-        issues.append(make_issue(row, "invalid_quantity", "数量に不正な値があります。0以上の数値で入力してください。", index))
+        value = row.get("_raw_quantity") or "空欄"
+        issues.append(
+            make_issue(
+                row,
+                "invalid_quantity",
+                f"数量に数値以外の値があります。不正な値: {value}",
+                index,
+                "数量には 1、2、10 のような0以上の数値を入力してください。",
+            )
+        )
     for index, row in validated_df[validated_df["unit_price"].isna()].iterrows():
-        issues.append(make_issue(row, "invalid_unit_price", "単価に不正な値があります。0以上の数値で入力してください。", index))
+        value = row.get("_raw_unit_price") or "空欄"
+        issues.append(
+            make_issue(
+                row,
+                "invalid_unit_price",
+                f"単価に数値以外の値があります。不正な値: {value}",
+                index,
+                "単価には 100、1200 のような0以上の数値を入力してください。",
+            )
+        )
     for index, row in validated_df[validated_df["quantity"] < 0].iterrows():
-        issues.append(make_issue(row, "negative_quantity", "数量にマイナスの値があります。0以上の数値で入力してください。", index))
+        issues.append(make_issue(row, "negative_quantity", f"数量にマイナスの値があります。不正な値: {row.get('_raw_quantity')}", index, "数量には0以上の数値を入力してください。"))
     for index, row in validated_df[validated_df["unit_price"] < 0].iterrows():
-        issues.append(make_issue(row, "negative_unit_price", "単価にマイナスの値があります。0以上の数値で入力してください。", index))
+        issues.append(make_issue(row, "negative_unit_price", f"単価にマイナスの値があります。不正な値: {row.get('_raw_unit_price')}", index, "単価には0以上の数値を入力してください。"))
+    if amount_numeric is not None:
+        invalid_amount_mask = amount_numeric.isna() & validated_df["_raw_amount"].notna() & validated_df["_raw_amount"].ne("")
+        for index, row in validated_df[invalid_amount_mask].iterrows():
+            issues.append(
+                make_issue(
+                    row,
+                    "invalid_amount",
+                    f"金額に数値以外の値があります。不正な値: {row.get('_raw_amount')}",
+                    index,
+                    "金額列を使う場合は、1000、2500 のような0以上の数値を入力してください。金額は数量×単価で自動計算されます。",
+                )
+            )
+        for index, row in validated_df[amount_numeric < 0].iterrows():
+            issues.append(
+                make_issue(
+                    row,
+                    "negative_amount",
+                    f"金額にマイナスの値があります。不正な値: {row.get('_raw_amount')}",
+                    index,
+                    "金額列を使う場合は0以上の数値を入力してください。金額は数量×単価で自動計算されます。",
+                )
+            )
 
     if issues:
         raise DataValidationError(issues)
 
+    validated_df = validated_df.drop(columns=[column for column in ["_raw_date", "_raw_quantity", "_raw_unit_price", "_raw_amount"] if column in validated_df.columns])
     validated_df["amount"] = validated_df["quantity"] * validated_df["unit_price"]
     return validated_df
 
@@ -366,7 +495,12 @@ def validate_date_option(value: str | None, option_name: str) -> pd.Timestamp | 
     try:
         return pd.to_datetime(value, format="%Y-%m-%d")
     except ValueError as exc:
-        raise ValueError(f"{option_name} は YYYY-MM-DD 形式で指定してください。例: 2026-04-01") from exc
+        raise ValueError(
+            f"{option_name} の日付として読み取れない値があります。\n\n"
+            f"不正な値: {value}\n\n"
+            "修正例:\n"
+            "2026-04-01"
+        ) from exc
 
 
 def filter_data(
@@ -379,7 +513,7 @@ def filter_data(
     category: str | None = None,
 ) -> pd.DataFrame:
     if month and (start_date or end_date):
-        raise ValueError("--month と --start-date/--end-date は同時に指定できません。")
+        raise ValueError("対象月と開始日・終了日は同時に指定できません。対象月または期間指定のどちらか一方を使ってください。")
 
     filtered_df = df.copy()
     if month:
@@ -388,7 +522,13 @@ def filter_data(
     start = validate_date_option(start_date, "--start-date")
     end = validate_date_option(end_date, "--end-date")
     if start is not None and end is not None and start > end:
-        raise ValueError("開始日が終了日より後になっています。開始日と終了日を確認してください。")
+        raise ValueError(
+            "開始日が終了日より後になっています。\n\n"
+            "開始日と終了日を確認してください。\n\n"
+            "修正例:\n"
+            "開始日: 2026-04-01\n"
+            "終了日: 2026-04-30"
+        )
     if start is not None:
         filtered_df = filtered_df[filtered_df["date"] >= start].copy()
     if end is not None:
@@ -401,7 +541,24 @@ def filter_data(
         filtered_df = filtered_df[filtered_df["category"] == category].copy()
 
     if filtered_df.empty:
-        raise ValueError("指定条件に一致するデータがありません。日付範囲、商品、カテゴリの指定を確認してください。")
+        if month:
+            raise ValueError(
+                "対象月に一致する売上データがありません。\n\n"
+                "確認してください:\n"
+                "- 対象月が正しいか\n"
+                "- CSV / Excelの日付列が正しいか\n"
+                "- data/input に対象月のファイルがあるか\n"
+                "- 読み込みファイル名パターンが正しいか\n\n"
+                f"対象月: {month}"
+            )
+        raise ValueError(
+            "指定条件に一致する売上データがありません。\n\n"
+            "確認してください:\n"
+            "- 開始日・終了日が正しいか\n"
+            "- 商品名やカテゴリ名がデータ内の値と一致しているか\n"
+            "- CSV / Excelの日付列が正しいか\n"
+            "- 読み込みファイル名パターンが正しいか"
+        )
     return filtered_df
 
 
@@ -737,6 +894,7 @@ def prepare_validation_errors_for_excel(error_df: pd.DataFrame) -> pd.DataFrame:
             "source_file": "元ファイル名",
             "source_row": "行番号",
             "message": "エラー内容",
+            "fix": "修正方法",
             "date": "date",
             "product": "product",
             "category": "category",

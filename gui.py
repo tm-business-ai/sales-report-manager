@@ -981,7 +981,7 @@ class MonthlyReportApp(BaseWindow):
             )
             if self.notify.get():
                 main.notify_completion("レポート作成に失敗しました。", self._optional(self.notify_webhook_url.get()), "error")
-            self.after(0, self._show_error, str(exc))
+            self.after(0, self._show_error, main.format_user_error_message(exc) + "\n\n詳細はログタブを確認してください。")
 
     def _show_table(self, title: str, preview: main.PreviewResult) -> None:
         window = tk.Toplevel(self)
@@ -1033,18 +1033,33 @@ class MonthlyReportApp(BaseWindow):
         messagebox.showerror("エラー", message)
 
     def _show_validation_error(self, error: main.DataValidationError, report_file: Path) -> None:
-        self._show_error(f"{error}\n\nエラー一覧CSV: {report_file}")
+        message = "\n".join(
+            [
+                main.format_user_error_message(error),
+                "",
+                f"エラー一覧CSV: {report_file}",
+                "",
+                "詳細はログタブも確認してください。",
+            ]
+        )
+        self._show_error(message)
         window = tk.Toplevel(self)
-        window.title("エラー一覧")
-        window.geometry("900x420")
-        columns = ("issue", "message", "source_file", "source_row")
+        window.title("エラー一覧と修正方法")
+        window.geometry("1060x460")
+        columns = ("message", "fix", "source_file", "source_row")
         tree = ttk.Treeview(window, columns=columns, show="headings")
         tree.pack(fill=tk.BOTH, expand=True)
+        headings = {
+            "message": "エラー内容",
+            "fix": "修正方法",
+            "source_file": "元ファイル",
+            "source_row": "行番号",
+        }
         for column in columns:
-            tree.heading(column, text=column)
-            tree.column(column, width=160, stretch=True)
+            tree.heading(column, text=headings[column])
+            tree.column(column, width=320 if column in {"message", "fix"} else 120, stretch=True)
         for issue in error.issues:
-            tree.insert("", tk.END, values=(issue.issue, issue.message, issue.source_file, issue.source_row))
+            tree.insert("", tk.END, values=(issue.message, issue.fix, issue.source_file, issue.source_row))
         self._refresh_audit_table()
         self._refresh_audit_log_text()
 
