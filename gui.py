@@ -131,22 +131,26 @@ ERROR_REVIEW_COLUMNS = (
 
 REPORT_HISTORY_COLUMNS = (
     ("created_at", "作成日時", 130),
-    ("target_month", "対象月", 90),
-    ("file_name", "ファイル名", 260),
-    ("report_type", "種類", 110),
-    ("size", "サイズ", 80),
-    ("folder", "保存先", 220),
+    ("target_month", "対象月", 80),
+    ("file_name", "ファイル名", 400),
+    ("report_type", "種類", 100),
+    ("size", "サイズ", 70),
+    ("folder", "保存先", 200),
 )
+REPORT_HISTORY_COLUMN_WIDTHS = {column: width for column, _label, width in REPORT_HISTORY_COLUMNS}
+REPORT_HISTORY_STRETCH_COLUMNS = {"file_name", "folder"}
 AUDIT_HISTORY_COLUMNS = (
-    ("timestamp", "日時", 120),
-    ("status", "状態", 100),
-    ("period", "期間", 100),
-    ("detail_count", "明細", 80),
-    ("summary_count", "集計", 80),
-    ("warnings", "警告", 80),
-    ("output_file", "出力", 260),
-    ("error", "エラー", 360),
+    ("timestamp", "日時", 150),
+    ("status", "状態", 120),
+    ("period", "期間", 90),
+    ("detail_count", "明細", 70),
+    ("summary_count", "集計", 70),
+    ("warnings", "警告", 70),
+    ("output_file", "出力", 360),
+    ("error", "エラー", 480),
 )
+AUDIT_HISTORY_COLUMN_WIDTHS = {column: width for column, _label, width in AUDIT_HISTORY_COLUMNS}
+AUDIT_HISTORY_STRETCH_COLUMNS = {"output_file", "error"}
 AUDIT_ACTION_BUTTONS = (
     ("履歴を更新", "_refresh_audit_table"),
     ("履歴をCSV出力", "_export_audit_csv"),
@@ -2150,7 +2154,12 @@ class MonthlyReportApp(BaseWindow):
         table_frame.rowconfigure(0, weight=1)
         for column, label, width in REPORT_HISTORY_COLUMNS:
             self.history_tree.heading(column, text=label)
-            self.history_tree.column(column, width=width, minwidth=70, stretch=True)
+            self.history_tree.column(
+                column,
+                width=width,
+                minwidth=min(width, 70),
+                stretch=column in REPORT_HISTORY_STRETCH_COLUMNS,
+            )
         self.history_tree.bind("<Double-Button-1>", lambda _event: self._show_selected_report_detail())
         self._bind_tree_mousewheel(self.history_tree)
         self._refresh_history()
@@ -2249,7 +2258,12 @@ class MonthlyReportApp(BaseWindow):
         table_frame.rowconfigure(0, weight=1)
         for column, label, width in AUDIT_HISTORY_COLUMNS:
             self.audit_tree.heading(column, text=label)
-            self.audit_tree.column(column, width=width, minwidth=70, stretch=False)
+            self.audit_tree.column(
+                column,
+                width=width,
+                minwidth=min(width, 70),
+                stretch=column in AUDIT_HISTORY_STRETCH_COLUMNS,
+            )
         self._bind_tree_mousewheel(self.audit_tree)
         self._refresh_audit_table()
 

@@ -81,6 +81,21 @@ def test_gui_report_history_columns_and_row_conversion(tmp_path: Path) -> None:
         "サイズ",
         "保存先",
     ]
+    widths = gui.REPORT_HISTORY_COLUMN_WIDTHS
+    assert widths == {column: width for column, _label, width in gui.REPORT_HISTORY_COLUMNS}
+    assert widths["created_at"] == 130
+    assert widths["target_month"] == 80
+    assert widths["file_name"] == 400
+    assert widths["report_type"] == 100
+    assert widths["size"] == 70
+    assert widths["folder"] == 200
+    assert widths["file_name"] > widths["target_month"]
+    assert widths["file_name"] > widths["size"]
+    assert gui.REPORT_HISTORY_STRETCH_COLUMNS == {"file_name", "folder"}
+    history_source = inspect.getsource(gui.MonthlyReportApp._build_history_tab)
+    assert "xscrollcommand=x_scroll.set" in history_source
+    assert "REPORT_HISTORY_STRETCH_COLUMNS" in history_source
+
     row = app_class._report_row_from_path(report_file)
 
     assert row["target_month"] == "2026-04"
@@ -102,10 +117,21 @@ def test_gui_audit_buttons_and_scrollable_columns_are_defined() -> None:
     ]
     widths = {column: width for column, _label, width in gui.AUDIT_HISTORY_COLUMNS}
 
-    assert widths["timestamp"] == 120
-    assert widths["output_file"] == 260
-    assert widths["error"] == 360
-    assert "xscrollcommand=x_scroll.set" in inspect.getsource(gui.MonthlyReportApp._build_audit_tab)
+    assert gui.AUDIT_HISTORY_COLUMN_WIDTHS == widths
+    assert widths["timestamp"] == 150
+    assert widths["status"] == 120
+    assert widths["period"] == 90
+    assert widths["detail_count"] == 70
+    assert widths["summary_count"] == 70
+    assert widths["warnings"] == 70
+    assert widths["output_file"] == 360
+    assert widths["error"] == 480
+    assert widths["output_file"] > widths["detail_count"]
+    assert widths["error"] > widths["summary_count"]
+    assert gui.AUDIT_HISTORY_STRETCH_COLUMNS == {"output_file", "error"}
+    audit_source = inspect.getsource(gui.MonthlyReportApp._build_audit_tab)
+    assert "xscrollcommand=x_scroll.set" in audit_source
+    assert "AUDIT_HISTORY_STRETCH_COLUMNS" in audit_source
 
 
 def test_gui_detail_log_columns_error_detection_and_filtering() -> None:
