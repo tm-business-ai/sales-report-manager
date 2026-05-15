@@ -1,3 +1,8 @@
+param(
+    [string]$AppName = "SalesReportManager",
+    [switch]$InstallPyInstaller
+)
+
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -5,12 +10,30 @@ $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 
 Set-Location $ProjectRoot
 
-& $Python -m pip show pyinstaller *> $null
-if ($LASTEXITCODE -ne 0) {
-    & $Python -m pip install pyinstaller
+if (-not (Test-Path $Python)) {
+    throw "Python was not found in .venv. Run setup.ps1 first: $Python"
 }
 
-& $Python -m PyInstaller --noconfirm --onefile --name monthly_report_cli main.py
-& $Python -m PyInstaller --noconfirm --onefile --windowed --name monthly_report_gui gui.py
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $Python -c "import PyInstaller" > $null 2>&1
+$PyInstallerExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
 
-Write-Output "Built executables in dist\"
+if ($PyInstallerExitCode -ne 0) {
+    if ($InstallPyInstaller) {
+        & $Python -m pip install pyinstaller
+    }
+    else {
+        throw "PyInstaller was not found. Run '.\.venv\Scripts\python.exe -m pip install -r requirements-optional.txt' and try again."
+    }
+}
+
+& $Python -m PyInstaller --noconfirm --clean --onefile --noconsole --name $AppName gui.py
+
+$ExePath = Join-Path $ProjectRoot "dist\$AppName.exe"
+if (-not (Test-Path $ExePath)) {
+    throw "Failed to create EXE: $ExePath"
+}
+
+Write-Output "Created EXE: $ExePath"

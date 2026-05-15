@@ -234,6 +234,29 @@ Excelレポートは `data/output` に出力されます。
 月末サマリーでは、売上合計、明細件数、数量合計、平均単価、対象日数、商品数、カテゴリ数、売上トップ商品、売上トップカテゴリ、未分類データ件数、エラー行件数を確認できます。  
 前月比較では、前月データがある場合に売上合計や平均単価などの差分・増減率を確認できます。前月データがない場合もエラーにはならず、比較不可として表示されます。
 
+## EXE化・配布
+
+通常はPython環境からGUIを起動します。
+
+```powershell
+.\.venv\Scripts\python.exe gui.py
+```
+
+Windows向けにEXE化する場合は、任意依存を入れてからビルドスクリプトを実行します。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-optional.txt
+powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
+```
+
+配布用フォルダを作成する場合は、EXE作成後に次を実行します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_release_package.ps1
+```
+
+詳しい手順と配布時の注意点は [docs/distribution_guide.md](docs/distribution_guide.md) を参照してください。
+
 ## テスト
 
 ```powershell
@@ -273,3 +296,4 @@ Excelレポートは `data/output` に出力されます。
 - 2026年3月と2026年4月の2か月分があり、2026年4月を対象月として実行すると前月比較を確認できます。
 - 詳しい操作方法は [docs/operation_manual.md](docs/operation_manual.md) を参照してください。
 - 利用・配布前の確認項目は [docs/release_checklist.md](docs/release_checklist.md) にまとめています。
+- Windows向けEXE化・配布手順は [docs/distribution_guide.md](docs/distribution_guide.md) にまとめています。

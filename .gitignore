@@ -23,6 +23,7 @@ release/
 build/
 dist/
 *.spec
+*.exe
 
 # Generated reports and local data
 *.log
