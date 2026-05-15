@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import sys
 import threading
 import tkinter as tk
 from datetime import datetime
@@ -39,6 +41,10 @@ MAPPING_STANDARD_LABELS = {
     "amount": "金額",
 }
 MAPPING_REQUIRED_KEYS = ("date", "product", "quantity", "unit_price")
+NO_REPORT_TO_OPEN_MESSAGE = "まだ開けるレポートがありません。\n先に「Excelレポートを作成」を実行してください。"
+REPORT_FILE_MISSING_MESSAGE = "レポートファイルが見つかりません。\n削除または移動された可能性があります。"
+OUTPUT_FOLDER_MISSING_MESSAGE = "出力フォルダが見つかりません。\n出力フォルダの指定を確認してください。"
+REPORT_SELECTION_REQUIRED_MESSAGE = "開くレポートを一覧から選択してください。"
 
 
 class MonthlyReportApp(BaseWindow):
@@ -48,6 +54,7 @@ class MonthlyReportApp(BaseWindow):
         self.geometry("1120x860")
         self.resizable(True, True)
         self.report_history: list[Path] = []
+        self.latest_report_path: Path | None = None
         self.audit_records: dict[str, dict] = {}
         self._init_variables()
         self._build_widgets()
@@ -204,7 +211,11 @@ class MonthlyReportApp(BaseWindow):
         ttk.Entry(audit_frame, textvariable=self.audit_keep_count, width=8).pack(side=tk.LEFT)
         ttk.Entry(audit_frame, textvariable=self.audit_keep_days, width=8).pack(side=tk.LEFT, padx=(8, 0))
 
-        drop_row = audit_row + 1
+        open_row = audit_row + 1
+        ttk.Button(root, text="Excelレポートを開く", command=self._open_latest_report).grid(row=open_row, column=0, sticky=tk.EW, pady=(0, 8))
+        ttk.Button(root, text="出力フォルダを開く", command=self._open_output_folder).grid(row=open_row, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+
+        drop_row = open_row + 1
         self.drop_label = ttk.Label(root, text="CSV/Excelをここへドロップすると入力フォルダを設定します", relief=tk.GROOVE, anchor=tk.CENTER, padding=16)
         self.drop_label.grid(row=drop_row, column=0, columnspan=4, sticky=tk.EW, pady=(4, 8))
         self._setup_drop_target()
@@ -229,7 +240,7 @@ class MonthlyReportApp(BaseWindow):
         buttons.pack(fill=tk.X, pady=(0, 8))
         ttk.Button(buttons, text="履歴を更新", command=self._refresh_history).pack(side=tk.LEFT)
         ttk.Button(buttons, text="詳細", command=self._show_selected_report_detail).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="レポートを開く", command=self._open_selected_report).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(buttons, text="選択したレポートを開く", command=self._open_selected_report).pack(side=tk.LEFT, padx=(8, 0))
 
         self.history_list = tk.Listbox(root, height=12)
         self.history_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -1108,12 +1119,16 @@ class MonthlyReportApp(BaseWindow):
                 f"未分類データ: {result.uncategorized_count:,}件",
                 f"エラー行: {result.error_count:,}件",
                 f"確認が必要なデータ: {result.uncategorized_count + result.error_count:,}件",
+                "",
+                "次の操作:",
+                "「Excelレポートを開く」ボタンで作成したレポートを確認できます。",
+                "「出力フォルダを開く」ボタンで保存先フォルダを確認できます。",
             ]
             for summary_csv_file in result.summary_csv_files:
                 lines.append(f"集計CSV: {summary_csv_file}")
             for warning in result.warnings:
                 lines.append(f"警告: {warning}")
-            self.after(0, self._show_success, "\n".join(lines))
+            self.after(0, self._show_success, "\n".join(lines), result.output_file)
         except main.DataValidationError as exc:
             output_dir = Path(self.output_dir.get())
             report_file = main.default_error_report_path(output_dir)
@@ -1173,8 +1188,13 @@ class MonthlyReportApp(BaseWindow):
         for row in preview.rows:
             tree.insert("", tk.END, values=row)
 
-    def _show_success(self, message: str) -> None:
+    def _remember_latest_report(self, report_file: Path | None) -> None:
+        if report_file is not None:
+            self.latest_report_path = Path(report_file)
+
+    def _show_success(self, message: str, report_file: Path | None = None) -> None:
         self.status.set("レポート作成が完了しました")
+        self._remember_latest_report(report_file)
         self.output.insert(tk.END, message)
         self._refresh_history()
         self._refresh_audit_table()
@@ -1242,26 +1262,63 @@ class MonthlyReportApp(BaseWindow):
             return None
         selection = self.history_list.curselection()
         if not selection:
-            self._show_error("レポートを選択してください。")
+            self._show_error(REPORT_SELECTION_REQUIRED_MESSAGE)
             return None
         selected_index = selection[0]
         if selected_index >= len(self.report_history):
-            self._show_error("レポートを選択してください。")
+            self._show_error(REPORT_SELECTION_REQUIRED_MESSAGE)
             return None
         return self.report_history[selected_index]
 
-    def _open_selected_report(self) -> None:
-        report_file = self._selected_report()
+    def _open_path(self, path: Path) -> None:
+        if sys.platform == "win32":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+
+    def _open_report_file(self, report_file: Path | None) -> None:
         if report_file is None:
+            self._show_error(NO_REPORT_TO_OPEN_MESSAGE)
+            return
+        report_file = Path(report_file)
+        if not report_file.exists() or not report_file.is_file():
+            self._show_error(REPORT_FILE_MISSING_MESSAGE)
             return
         try:
-            subprocess.Popen(["cmd", "/c", "start", "", str(report_file)])
+            self._open_path(report_file)
         except Exception as exc:
-            self._show_error(str(exc))
+            self._show_error(f"レポートファイルを開けませんでした。\n{exc}")
+
+    def _open_latest_report(self) -> None:
+        self._open_report_file(self.latest_report_path)
+
+    def _open_output_folder(self) -> None:
+        output_dir = Path(self.output_dir.get().strip() or main.OUTPUT_DIR)
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self._show_error(f"{OUTPUT_FOLDER_MISSING_MESSAGE}\n{exc}")
+            return
+        if not output_dir.exists() or not output_dir.is_dir():
+            self._show_error(OUTPUT_FOLDER_MISSING_MESSAGE)
+            return
+        try:
+            self._open_path(output_dir)
+        except Exception as exc:
+            self._show_error(f"出力フォルダを開けませんでした。\n{exc}")
+
+    def _open_selected_report(self) -> None:
+        report_file = self._selected_report()
+        self._open_report_file(report_file)
 
     def _show_selected_report_detail(self) -> None:
         report_file = self._selected_report()
         if report_file is None:
+            return
+        if not report_file.exists() or not report_file.is_file():
+            self._show_error(REPORT_FILE_MISSING_MESSAGE)
             return
         stat = report_file.stat()
         window = tk.Toplevel(self)
@@ -1283,8 +1340,8 @@ class MonthlyReportApp(BaseWindow):
         text.configure(state=tk.DISABLED)
         buttons = ttk.Frame(window)
         buttons.pack(fill=tk.X, pady=8)
-        ttk.Button(buttons, text="開く", command=lambda: subprocess.Popen(["cmd", "/c", "start", "", str(report_file)])).pack(side=tk.LEFT, padx=8)
-        ttk.Button(buttons, text="フォルダを開く", command=lambda: subprocess.Popen(["explorer", "/select,", str(report_file)])).pack(side=tk.LEFT)
+        ttk.Button(buttons, text="選択したレポートを開く", command=lambda: self._open_report_file(report_file)).pack(side=tk.LEFT, padx=8)
+        ttk.Button(buttons, text="出力フォルダを開く", command=lambda: self._open_path(report_file.parent)).pack(side=tk.LEFT)
 
     def _register_schedule(self) -> None:
         try:
