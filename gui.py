@@ -20,6 +20,24 @@ except ImportError:
 BaseWindow = TkinterDnD.Tk if TkinterDnD else tk.Tk
 GUI_STATE_FILE = main.LOG_DIR / "gui_state.json"
 APP_TITLE = "売上データ自動集計・月末売上管理ツール"
+APP_BACKGROUND = "#F7F9FB"
+APP_HEADING_COLOR = "#1F4E79"
+APP_BORDER_COLOR = "#D9E2EC"
+APP_SUCCESS_COLOR = "#2E7D32"
+APP_ERROR_COLOR = "#C0392B"
+PRIMARY_BUTTON_WIDTH = 20
+SECONDARY_BUTTON_WIDTH = 18
+ERROR_DIALOG_SIZE = "1200x700"
+ERROR_DIALOG_MIN_SIZE = (900, 500)
+ERROR_TABLE_DIALOG_SIZE = "1200x700"
+ERROR_TABLE_DIALOG_MIN_SIZE = (900, 500)
+TAB_LABELS = {
+    "run": "実行",
+    "error": "エラー確認",
+    "history": "作成済みレポート",
+    "audit": "実行履歴",
+    "log": "詳細ログ",
+}
 RUN_TAB_DESCRIPTION = (
     "CSV・Excelの売上データを読み込み、月末確認用のExcelレポートを作成します。\n"
     "入力データを選び、対象月を指定して、プレビュー確認後にレポートを作成してください。"
@@ -72,9 +90,37 @@ class MonthlyReportApp(BaseWindow):
         self.latest_error_csv_path: Path | None = None
         self.audit_records: dict[str, dict] = {}
         self._init_variables()
+        self._configure_style()
         self._build_widgets()
         self._load_state()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _configure_style(self) -> None:
+        self.configure(bg=APP_BACKGROUND)
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure(".", font=("Meiryo", 9))
+        style.configure("TFrame", background=APP_BACKGROUND)
+        style.configure("TLabel", background=APP_BACKGROUND, foreground="#1F2933")
+        style.configure("Heading.TLabel", background=APP_BACKGROUND, foreground=APP_HEADING_COLOR, font=("Meiryo", 10, "bold"))
+        style.configure("Help.TLabel", background=APP_BACKGROUND, foreground="#555555")
+        style.configure("Success.TLabel", background=APP_BACKGROUND, foreground=APP_SUCCESS_COLOR)
+        style.configure("Error.TLabel", background=APP_BACKGROUND, foreground=APP_ERROR_COLOR)
+        style.configure("TNotebook", background=APP_BACKGROUND, borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(18, 10), font=("Meiryo", 10))
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", "#EAF2FB"), ("active", "#F0F5FA")],
+            foreground=[("selected", APP_HEADING_COLOR)],
+        )
+        style.configure("TButton", padding=(8, 6))
+        style.configure("Treeview.Heading", font=("Meiryo", 9, "bold"))
+
+    def _button(self, parent: tk.Widget, text: str, command, *, width: int = PRIMARY_BUTTON_WIDTH, **kwargs) -> ttk.Button:
+        return ttk.Button(parent, text=text, command=command, width=width, **kwargs)
 
     def _init_variables(self) -> None:
         self.input_dir = tk.StringVar(value=str(main.INPUT_DIR))
@@ -122,11 +168,11 @@ class MonthlyReportApp(BaseWindow):
         history_tab = ttk.Frame(self.notebook, padding=12)
         audit_tab = ttk.Frame(self.notebook, padding=12)
         log_tab = ttk.Frame(self.notebook, padding=12)
-        self.notebook.add(run_tab, text="実行")
-        self.notebook.add(error_tab, text="エラー確認")
-        self.notebook.add(history_tab, text="レポート履歴")
-        self.notebook.add(audit_tab, text="監査履歴")
-        self.notebook.add(log_tab, text="ログ")
+        self.notebook.add(run_tab, text=TAB_LABELS["run"])
+        self.notebook.add(error_tab, text=TAB_LABELS["error"])
+        self.notebook.add(history_tab, text=TAB_LABELS["history"])
+        self.notebook.add(audit_tab, text=TAB_LABELS["audit"])
+        self.notebook.add(log_tab, text=TAB_LABELS["log"])
 
         self._build_run_tab(run_tab)
         self._build_error_tab(error_tab)
@@ -135,7 +181,7 @@ class MonthlyReportApp(BaseWindow):
         self._build_log_tab(log_tab)
 
     def _build_run_tab(self, root: ttk.Frame) -> None:
-        intro = ttk.Label(root, text=RUN_TAB_DESCRIPTION, justify=tk.LEFT, wraplength=940)
+        intro = ttk.Label(root, text=RUN_TAB_DESCRIPTION, justify=tk.LEFT, wraplength=940, style="Heading.TLabel")
         intro.grid(row=0, column=0, columnspan=4, sticky=tk.EW, pady=(0, 8))
         steps = ttk.Label(root, text=RUN_TAB_STEPS, justify=tk.LEFT, relief=tk.GROOVE, padding=10)
         steps.grid(row=1, column=0, columnspan=4, sticky=tk.EW, pady=(0, 12))
@@ -160,8 +206,8 @@ class MonthlyReportApp(BaseWindow):
             ttk.Label(root, text=label).grid(row=row, column=0, sticky=tk.W, pady=4)
             ttk.Entry(root, textvariable=variable).grid(row=row, column=1, sticky=tk.EW, pady=4)
             if command:
-                ttk.Button(root, text="選択", command=command).grid(row=row, column=2, sticky=tk.EW, padx=(8, 0), pady=4)
-            ttk.Label(root, text=help_text, foreground="#555555", wraplength=300).grid(row=row, column=3, sticky=tk.W, padx=(8, 0), pady=4)
+                self._button(root, text="選択", command=command, width=SECONDARY_BUTTON_WIDTH).grid(row=row, column=2, sticky=tk.EW, padx=(8, 0), pady=4)
+            ttk.Label(root, text=help_text, wraplength=300, style="Help.TLabel").grid(row=row, column=3, sticky=tk.W, padx=(8, 0), pady=4)
 
         option_row = field_start_row + len(fields)
         ttk.Label(root, text="集計単位").grid(row=option_row, column=0, sticky=tk.W, pady=4)
@@ -184,22 +230,22 @@ class MonthlyReportApp(BaseWindow):
         ttk.Checkbutton(checks, text="通知音", variable=self.notify).pack(side=tk.LEFT)
 
         action_row = option_row + 2
-        ttk.Button(root, text="Excelレポートを作成", command=self._run_async).grid(row=action_row, column=0, sticky=tk.EW, pady=8)
-        ttk.Button(root, text="データをプレビュー", command=self._preview).grid(row=action_row, column=1, sticky=tk.EW, padx=(8, 0), pady=8)
-        ttk.Button(root, text="集計プレビュー", command=self._summary_preview).grid(row=action_row, column=2, sticky=tk.EW, padx=(8, 0), pady=8)
-        ttk.Button(root, text="プリセット適用", command=self._apply_selected_preset).grid(row=action_row, column=3, sticky=tk.EW, padx=(8, 0), pady=8)
+        self._button(root, text="Excelレポートを作成", command=self._run_async).grid(row=action_row, column=0, sticky=tk.EW, pady=8)
+        self._button(root, text="データをプレビュー", command=self._preview).grid(row=action_row, column=1, sticky=tk.EW, padx=(8, 0), pady=8)
+        self._button(root, text="集計プレビュー", command=self._summary_preview).grid(row=action_row, column=2, sticky=tk.EW, padx=(8, 0), pady=8)
+        self._button(root, text="プリセット適用", command=self._apply_selected_preset).grid(row=action_row, column=3, sticky=tk.EW, padx=(8, 0), pady=8)
 
         action_row += 1
-        ttk.Button(root, text="設定読込", command=self._load_config).grid(row=action_row, column=0, sticky=tk.EW, pady=(0, 8))
-        ttk.Button(root, text="設定保存", command=self._save_config).grid(row=action_row, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        ttk.Button(root, text="CSVテンプレート作成", command=self._write_template).grid(row=action_row, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        ttk.Button(root, text="タスク登録", command=self._register_schedule).grid(row=action_row, column=3, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        self._button(root, text="設定読込", command=self._load_config).grid(row=action_row, column=0, sticky=tk.EW, pady=(0, 8))
+        self._button(root, text="設定保存", command=self._save_config).grid(row=action_row, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        self._button(root, text="CSVテンプレート作成", command=self._write_template).grid(row=action_row, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        self._button(root, text="タスク登録", command=self._register_schedule).grid(row=action_row, column=3, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
 
-        ttk.Button(root, text="設定ウィザード", command=self._open_config_wizard).grid(row=action_row + 1, column=0, sticky=tk.EW, pady=(0, 8))
+        self._button(root, text="設定ウィザード", command=self._open_config_wizard).grid(row=action_row + 1, column=0, sticky=tk.EW, pady=(0, 8))
 
-        ttk.Button(root, text="設定内容チェック", command=self._review_current_settings).grid(row=action_row + 1, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        ttk.Button(root, text="列名設定を開く", command=self._edit_column_aliases).grid(row=action_row + 1, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        ttk.Button(root, text="文字化け修復", command=self._repair_legacy_text_files).grid(row=action_row + 1, column=3, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        self._button(root, text="設定内容チェック", command=self._review_current_settings).grid(row=action_row + 1, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        self._button(root, text="列名設定を開く", command=self._edit_column_aliases).grid(row=action_row + 1, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        self._button(root, text="文字化け修復", command=self._repair_legacy_text_files).grid(row=action_row + 1, column=3, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
 
         schedule_row = action_row + 2
         ttk.Label(root, text="定期実行 日/時刻").grid(row=schedule_row, column=0, sticky=tk.W, pady=(0, 8))
@@ -207,14 +253,14 @@ class MonthlyReportApp(BaseWindow):
         schedule_frame.grid(row=schedule_row, column=1, sticky=tk.W, pady=(0, 8))
         ttk.Entry(schedule_frame, textvariable=self.schedule_day, width=5).pack(side=tk.LEFT)
         ttk.Entry(schedule_frame, textvariable=self.schedule_time, width=8).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(root, text="列名候補を更新", command=self._refresh_column_aliases_from_input).grid(
+        self._button(root, text="列名候補を更新", command=self._refresh_column_aliases_from_input).grid(
             row=schedule_row,
             column=2,
             sticky=tk.EW,
             padx=(8, 0),
             pady=(0, 8),
         )
-        ttk.Button(root, text="Excel見た目設定", command=self._edit_style_config).grid(
+        self._button(root, text="Excel見た目設定", command=self._edit_style_config).grid(
             row=schedule_row,
             column=3,
             sticky=tk.EW,
@@ -230,9 +276,9 @@ class MonthlyReportApp(BaseWindow):
         ttk.Entry(audit_frame, textvariable=self.audit_keep_days, width=8).pack(side=tk.LEFT, padx=(8, 0))
 
         open_row = audit_row + 1
-        ttk.Button(root, text="Excelレポートを開く", command=self._open_latest_report).grid(row=open_row, column=0, sticky=tk.EW, pady=(0, 8))
-        ttk.Button(root, text="出力フォルダを開く", command=self._open_output_folder).grid(row=open_row, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
-        ttk.Button(root, text="エラーを確認", command=self._review_input_errors).grid(row=open_row, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        self._button(root, text="Excelレポートを開く", command=self._open_latest_report).grid(row=open_row, column=0, sticky=tk.EW, pady=(0, 8))
+        self._button(root, text="出力フォルダを開く", command=self._open_output_folder).grid(row=open_row, column=1, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
+        self._button(root, text="エラーを確認", command=self._review_input_errors).grid(row=open_row, column=2, sticky=tk.EW, padx=(8, 0), pady=(0, 8))
 
         drop_row = open_row + 1
         self.drop_label = ttk.Label(root, text="CSV/Excelをここへドロップすると入力フォルダを設定します", relief=tk.GROOVE, anchor=tk.CENTER, padding=16)
@@ -257,9 +303,9 @@ class MonthlyReportApp(BaseWindow):
         ).pack(fill=tk.X, pady=(0, 8))
         buttons = ttk.Frame(root)
         buttons.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(buttons, text="履歴を更新", command=self._refresh_history).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="詳細", command=self._show_selected_report_detail).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="選択したレポートを開く", command=self._open_selected_report).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="履歴を更新", command=self._refresh_history, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT)
+        self._button(buttons, text="詳細", command=self._show_selected_report_detail, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="選択したレポートを開く", command=self._open_selected_report).pack(side=tk.LEFT, padx=(8, 0))
 
         self.history_list = tk.Listbox(root, height=12)
         self.history_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -279,10 +325,10 @@ class MonthlyReportApp(BaseWindow):
 
         buttons = ttk.Frame(root)
         buttons.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(buttons, text="入力データを検証", command=self._review_input_errors).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="エラー行を再読み込み", command=self._review_input_errors).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="エラーCSVを開く", command=self._open_error_csv).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="エラーCSVの保存先を開く", command=self._open_error_csv_folder).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="入力データを検証", command=self._review_input_errors).pack(side=tk.LEFT)
+        self._button(buttons, text="エラー行を再読み込み", command=self._review_input_errors).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="エラーCSVを開く", command=self._open_error_csv).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="エラーCSVの保存先を開く", command=self._open_error_csv_folder).pack(side=tk.LEFT, padx=(8, 0))
 
         self.error_review_status = tk.StringVar(value=NO_VALIDATION_ERRORS_MESSAGE)
         ttk.Label(root, textvariable=self.error_review_status, justify=tk.LEFT, wraplength=900).pack(fill=tk.X, pady=(0, 8))
@@ -297,6 +343,7 @@ class MonthlyReportApp(BaseWindow):
         self.error_tree.grid(row=0, column=0, sticky=tk.NSEW)
         y_scroll.grid(row=0, column=1, sticky=tk.NS)
         x_scroll.grid(row=1, column=0, sticky=tk.EW)
+        self._bind_tree_mousewheel(self.error_tree)
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
         for column, label, width in ERROR_REVIEW_COLUMNS:
@@ -313,14 +360,14 @@ class MonthlyReportApp(BaseWindow):
         ).pack(fill=tk.X, pady=(0, 8))
         buttons = ttk.Frame(root)
         buttons.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(buttons, text="履歴を更新", command=self._refresh_audit_table).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="CSVエクスポート", command=self._export_audit_csv).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="要約CSV", command=self._export_audit_summary_csv).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="月別要約CSV", command=self._export_audit_monthly_summary_csv).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="バックアップ", command=self._backup_audit_log).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(buttons, text="異常チェック", command=self._show_audit_anomalies).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="履歴を更新", command=self._refresh_audit_table, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT)
+        self._button(buttons, text="CSVエクスポート", command=self._export_audit_csv, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="要約CSV", command=self._export_audit_summary_csv, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="月別要約CSV", command=self._export_audit_monthly_summary_csv, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="バックアップ", command=self._backup_audit_log, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="異常チェック", command=self._show_audit_anomalies, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
 
-        ttk.Button(buttons, text="履歴から条件復元", command=self._restore_selected_audit_record).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="履歴から条件復元", command=self._restore_selected_audit_record).pack(side=tk.LEFT, padx=(8, 0))
 
         ttk.Label(buttons, text="検索").pack(side=tk.LEFT, padx=(16, 4))
         ttk.Entry(buttons, textvariable=self.audit_filter_text, width=24).pack(side=tk.LEFT)
@@ -331,8 +378,8 @@ class MonthlyReportApp(BaseWindow):
         ttk.Entry(filters, textvariable=self.audit_filter_date_from, width=12).pack(side=tk.LEFT, padx=(4, 0))
         ttk.Label(filters, text="〜").pack(side=tk.LEFT, padx=4)
         ttk.Entry(filters, textvariable=self.audit_filter_date_to, width=12).pack(side=tk.LEFT)
-        ttk.Button(filters, text="適用", command=self._refresh_audit_table).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(filters, text="修復プレビュー", command=self._preview_legacy_text_repairs).pack(side=tk.RIGHT)
+        self._button(filters, text="適用", command=self._refresh_audit_table, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(filters, text="修復プレビュー", command=self._preview_legacy_text_repairs, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.RIGHT)
 
         columns = ("timestamp", "status", "period", "detail_count", "summary_count", "warnings", "output_file", "error")
         table_frame = ttk.Frame(root)
@@ -344,6 +391,7 @@ class MonthlyReportApp(BaseWindow):
         self.audit_tree.grid(row=0, column=0, sticky=tk.NSEW)
         y_scroll.grid(row=0, column=1, sticky=tk.NS)
         x_scroll.grid(row=1, column=0, sticky=tk.EW)
+        self._bind_tree_mousewheel(self.audit_tree)
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
 
@@ -373,8 +421,8 @@ class MonthlyReportApp(BaseWindow):
         ).pack(fill=tk.X, pady=(0, 8))
         buttons = ttk.Frame(root)
         buttons.pack(fill=tk.X, pady=(0, 8))
-        ttk.Button(buttons, text="ログ更新", command=self._refresh_log_text).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="監査ログ表示", command=self._refresh_audit_log_text).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="ログ更新", command=self._refresh_log_text, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT)
+        self._button(buttons, text="監査ログ表示", command=self._refresh_audit_log_text, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
 
         self.log_text = tk.Text(root, height=12)
         self.log_text.pack(fill=tk.BOTH, expand=True)
@@ -655,7 +703,7 @@ class MonthlyReportApp(BaseWindow):
             return None
         parsed = int(value)
         if parsed < 1:
-            raise ValueError("監査履歴の保持設定は1以上で指定してください。")
+            raise ValueError("実行履歴の保持設定は1以上で指定してください。")
         return parsed
 
     def _column_aliases(self) -> dict[str, str]:
@@ -1207,7 +1255,7 @@ class MonthlyReportApp(BaseWindow):
             )
             if self.notify.get():
                 main.notify_completion("レポート作成に失敗しました。", self._optional(self.notify_webhook_url.get()), "error")
-            self.after(0, self._show_error, main.format_user_error_message(exc) + "\n\n詳細はログタブを確認してください。")
+            self.after(0, self._show_error, main.format_user_error_message(exc) + f"\n\n詳細は「{TAB_LABELS['log']}」タブを確認してください。")
 
     def _show_table(self, title: str, preview: main.PreviewResult) -> None:
         window = tk.Toplevel(self)
@@ -1241,6 +1289,25 @@ class MonthlyReportApp(BaseWindow):
             tree.column(column, width=120, minwidth=80, stretch=True)
         for row in preview.rows:
             tree.insert("", tk.END, values=row)
+        self._bind_tree_mousewheel(tree)
+
+    def _bind_tree_mousewheel(self, tree: ttk.Treeview) -> None:
+        def on_mousewheel(event: tk.Event) -> str:
+            delta = int(-1 * (event.delta / 120)) if getattr(event, "delta", 0) else 0
+            tree.yview_scroll(delta, "units")
+            return "break"
+
+        def on_linux_scroll_up(_event: tk.Event) -> str:
+            tree.yview_scroll(-1, "units")
+            return "break"
+
+        def on_linux_scroll_down(_event: tk.Event) -> str:
+            tree.yview_scroll(1, "units")
+            return "break"
+
+        tree.bind("<MouseWheel>", on_mousewheel)
+        tree.bind("<Button-4>", on_linux_scroll_up)
+        tree.bind("<Button-5>", on_linux_scroll_down)
 
     def _remember_latest_report(self, report_file: Path | None) -> None:
         if report_file is not None:
@@ -1261,7 +1328,43 @@ class MonthlyReportApp(BaseWindow):
         self.status.set("エラー")
         if hasattr(self, "output"):
             self.output.insert(tk.END, message)
-        messagebox.showerror("エラー", message)
+        window = tk.Toplevel(self)
+        window.title("エラー内容と確認ポイント")
+        window.geometry(ERROR_DIALOG_SIZE)
+        window.minsize(*ERROR_DIALOG_MIN_SIZE)
+        window.resizable(True, True)
+
+        header = ttk.Label(window, text="エラーが発生しました", style="Error.TLabel", font=("Meiryo", 11, "bold"))
+        header.pack(fill=tk.X, padx=12, pady=(12, 6))
+
+        frame = ttk.Frame(window, padding=(12, 0, 12, 12))
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        text = tk.Text(frame, wrap=tk.NONE, relief=tk.SOLID, borderwidth=1)
+        y_scroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=text.yview)
+        x_scroll = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=text.xview)
+        text.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        text.grid(row=0, column=0, sticky=tk.NSEW)
+        y_scroll.grid(row=0, column=1, sticky=tk.NS)
+        x_scroll.grid(row=1, column=0, sticky=tk.EW)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        text.insert(tk.END, message)
+        text.configure(state=tk.DISABLED)
+
+        def on_mousewheel(event: tk.Event) -> str:
+            delta = int(-1 * (event.delta / 120)) if getattr(event, "delta", 0) else 0
+            text.yview_scroll(delta, "units")
+            return "break"
+
+        text.bind("<MouseWheel>", on_mousewheel)
+        text.bind("<Button-4>", lambda _event: (text.yview_scroll(-1, "units"), "break")[1])
+        text.bind("<Button-5>", lambda _event: (text.yview_scroll(1, "units"), "break")[1])
+
+        buttons = ttk.Frame(window, padding=(12, 0, 12, 12))
+        buttons.pack(fill=tk.X)
+        self._button(buttons, text="閉じる", command=window.destroy, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.RIGHT)
 
     def _error_rows_from_validation_error(self, error: main.DataValidationError) -> list[dict[str, str]]:
         error_df = main.create_validation_error_rows(error)
@@ -1288,7 +1391,7 @@ class MonthlyReportApp(BaseWindow):
         if hasattr(self, "notebook") and hasattr(self, "error_tree"):
             parent = self.error_tree.winfo_toplevel()
             for tab_id in self.notebook.tabs():
-                if self.notebook.tab(tab_id, "text") == "エラー確認":
+                if self.notebook.tab(tab_id, "text") == TAB_LABELS["error"]:
                     self.notebook.select(tab_id)
                     break
 
@@ -1346,7 +1449,7 @@ class MonthlyReportApp(BaseWindow):
                 "",
                 f"エラー一覧CSV: {report_file}",
                 "",
-                "詳細はログタブも確認してください。",
+                f"詳細は「{TAB_LABELS['log']}」タブも確認してください。",
             ]
         )
         self._show_error(message)
@@ -1355,10 +1458,21 @@ class MonthlyReportApp(BaseWindow):
         self._select_error_tab()
         window = tk.Toplevel(self)
         window.title("エラー一覧と修正方法")
-        window.geometry("1060x460")
+        window.geometry(ERROR_TABLE_DIALOG_SIZE)
+        window.minsize(*ERROR_TABLE_DIALOG_MIN_SIZE)
+        window.resizable(True, True)
         columns = ("message", "fix", "source_file", "source_row")
-        tree = ttk.Treeview(window, columns=columns, show="headings")
-        tree.pack(fill=tk.BOTH, expand=True)
+        frame = ttk.Frame(window, padding=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+        tree = ttk.Treeview(frame, columns=columns, show="headings")
+        y_scroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
+        x_scroll = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=tree.xview)
+        tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        tree.grid(row=0, column=0, sticky=tk.NSEW)
+        y_scroll.grid(row=0, column=1, sticky=tk.NS)
+        x_scroll.grid(row=1, column=0, sticky=tk.EW)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
         headings = {
             "message": "エラー内容",
             "fix": "修正方法",
@@ -1370,6 +1484,7 @@ class MonthlyReportApp(BaseWindow):
             tree.column(column, width=320 if column in {"message", "fix"} else 120, stretch=True)
         for issue in error.issues:
             tree.insert("", tk.END, values=(issue.message, issue.fix, issue.source_file, issue.source_row))
+        self._bind_tree_mousewheel(tree)
         self._refresh_audit_table()
         self._refresh_audit_log_text()
 
@@ -1629,7 +1744,7 @@ class MonthlyReportApp(BaseWindow):
     def _export_audit_csv(self) -> None:
         records = self._filtered_audit_records()
         if not records:
-            self._show_error("出力対象の監査履歴がありません。")
+            self._show_error("出力対象の実行履歴がありません。")
             return
         selected = filedialog.asksaveasfilename(
             defaultextension=".csv",
@@ -1641,15 +1756,15 @@ class MonthlyReportApp(BaseWindow):
             return
         try:
             export_file = main.export_audit_log_csv(records, Path(selected))
-            self.status.set("監査履歴CSVを出力しました")
-            messagebox.showinfo("完了", f"監査履歴CSVを出力しました。\n{export_file}")
+            self.status.set("実行履歴CSVを出力しました")
+            messagebox.showinfo("完了", f"実行履歴CSVを出力しました。\n{export_file}")
         except Exception as exc:
             self._show_error(str(exc))
 
     def _export_audit_summary_csv(self) -> None:
         records = self._filtered_audit_records()
         if not records:
-            self._show_error("出力対象の監査履歴がありません。")
+            self._show_error("出力対象の実行履歴がありません。")
             return
         selected = filedialog.asksaveasfilename(
             defaultextension=".csv",
@@ -1661,15 +1776,15 @@ class MonthlyReportApp(BaseWindow):
             return
         try:
             export_file = main.export_audit_summary_csv(records, Path(selected))
-            self.status.set("監査履歴要約CSVを出力しました")
-            messagebox.showinfo("完了", f"監査履歴要約CSVを出力しました。\n{export_file}")
+            self.status.set("実行履歴要約CSVを出力しました")
+            messagebox.showinfo("完了", f"実行履歴要約CSVを出力しました。\n{export_file}")
         except Exception as exc:
             self._show_error(str(exc))
 
     def _export_audit_monthly_summary_csv(self) -> None:
         records = self._filtered_audit_records()
         if not records:
-            self._show_error("出力対象の監査履歴がありません。")
+            self._show_error("出力対象の実行履歴がありません。")
             return
         selected = filedialog.asksaveasfilename(
             defaultextension=".csv",
@@ -1681,8 +1796,8 @@ class MonthlyReportApp(BaseWindow):
             return
         try:
             export_file = main.export_audit_monthly_summary_csv(records, Path(selected))
-            self.status.set("監査履歴月別要約CSVを出力しました")
-            messagebox.showinfo("完了", f"監査履歴月別要約CSVを出力しました。\n{export_file}")
+            self.status.set("実行履歴月別要約CSVを出力しました")
+            messagebox.showinfo("完了", f"実行履歴月別要約CSVを出力しました。\n{export_file}")
         except Exception as exc:
             self._show_error(str(exc))
 
@@ -1690,18 +1805,18 @@ class MonthlyReportApp(BaseWindow):
         try:
             backup_file = main.backup_audit_log()
             if backup_file is None:
-                self.status.set("バックアップ対象の監査履歴はありませんでした")
-                messagebox.showinfo("確認", "バックアップ対象の監査履歴はありませんでした。")
+                self.status.set("バックアップ対象の実行履歴はありませんでした")
+                messagebox.showinfo("確認", "バックアップ対象の実行履歴はありませんでした。")
                 return
-            self.status.set("監査履歴をバックアップしました")
-            messagebox.showinfo("完了", f"監査履歴をバックアップしました。\n{backup_file}")
+            self.status.set("実行履歴をバックアップしました")
+            messagebox.showinfo("完了", f"実行履歴をバックアップしました。\n{backup_file}")
         except Exception as exc:
             self._show_error(str(exc))
 
     def _show_audit_anomalies(self) -> None:
         records = self._filtered_audit_records()
         if not records:
-            self._show_error("確認対象の監査履歴がありません。")
+            self._show_error("確認対象の実行履歴がありません。")
             return
         anomaly = main.detect_audit_anomalies(records)
         lines = [
@@ -1715,7 +1830,7 @@ class MonthlyReportApp(BaseWindow):
             f"アラート: {' / '.join(anomaly.alerts) if anomaly.alerts else 'なし'}",
         ]
         window = tk.Toplevel(self)
-        window.title("監査履歴異常チェック")
+        window.title("実行履歴異常チェック")
         window.geometry("560x320")
         text = tk.Text(window, height=12)
         text.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
@@ -1725,7 +1840,7 @@ class MonthlyReportApp(BaseWindow):
     def _selected_audit_record(self) -> dict | None:
         selection = self.audit_tree.selection()
         if not selection:
-            self._show_error("監査履歴を選択してください。")
+            self._show_error("実行履歴を選択してください。")
             return None
         return self.audit_records.get(selection[0])
 
@@ -1757,7 +1872,7 @@ class MonthlyReportApp(BaseWindow):
         }
         self._apply_config(config)
         self._save_state()
-        self.status.set("監査履歴から実行条件を復元しました")
+        self.status.set("実行履歴から実行条件を復元しました")
 
 
 def main_gui() -> None:

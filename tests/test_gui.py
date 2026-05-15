@@ -11,6 +11,18 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert "Excelレポートを作成" in gui.RUN_TAB_STEPS
     assert gui.MAPPING_STANDARD_LABELS["date"] == "日付"
     assert "unit_price" in gui.MAPPING_REQUIRED_KEYS
+    assert gui.PRIMARY_BUTTON_WIDTH == 20
+    assert gui.SECONDARY_BUTTON_WIDTH == 18
+    assert gui.ERROR_DIALOG_SIZE == "1200x700"
+    assert gui.ERROR_DIALOG_MIN_SIZE == (900, 500)
+    assert gui.ERROR_TABLE_DIALOG_SIZE == "1200x700"
+    assert gui.TAB_LABELS == {
+        "run": "実行",
+        "error": "エラー確認",
+        "history": "作成済みレポート",
+        "audit": "実行履歴",
+        "log": "詳細ログ",
+    }
     assert "先に「Excelレポートを作成」" in gui.NO_REPORT_TO_OPEN_MESSAGE
     assert "削除または移動" in gui.REPORT_FILE_MISSING_MESSAGE
     assert "出力フォルダ" in gui.OUTPUT_FOLDER_MISSING_MESSAGE
@@ -42,6 +54,9 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert hasattr(app_class, "_open_error_csv")
     assert hasattr(app_class, "_set_error_review_rows")
     assert hasattr(app_class, "_error_rows_from_validation_error")
+    assert hasattr(app_class, "_configure_style")
+    assert hasattr(app_class, "_button")
+    assert hasattr(app_class, "_bind_tree_mousewheel")
 
 
 def test_gui_column_mapping_helpers_convert_between_shapes() -> None:
