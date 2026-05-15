@@ -68,6 +68,13 @@ release/SalesReportManager/
 - 配布するサンプルデータは架空データのみ使用してください。
 - Windows Defenderや社内セキュリティソフトで、個人作成EXEとして警告が表示される場合があります。
 
+## README用画像の更新
+
+README用の画像は `docs/images` にPNG形式で保存します。  
+GUIの実行タブ、列名設定画面、エラー確認タブ、Excelレポート、配布フォルダ構成を撮影すると、利用イメージが伝わりやすくなります。
+
+撮影手順は [docs/screenshot_guide.md](screenshot_guide.md) を参照してください。
+
 ## EXE化できない場合の通常起動
 
 EXE化せずに利用する場合は、通常通りPythonからGUIを起動できます。
