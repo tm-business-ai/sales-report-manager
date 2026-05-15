@@ -138,7 +138,23 @@ REPORT_HISTORY_COLUMNS = (
     ("folder", "保存先", 200),
 )
 REPORT_HISTORY_COLUMN_WIDTHS = {column: width for column, _label, width in REPORT_HISTORY_COLUMNS}
-REPORT_HISTORY_STRETCH_COLUMNS = {"file_name", "folder"}
+REPORT_HISTORY_COLUMN_MIN_WIDTHS = {
+    "created_at": 110,
+    "target_month": 70,
+    "file_name": 220,
+    "report_type": 80,
+    "size": 60,
+    "folder": 140,
+}
+REPORT_HISTORY_COLUMN_WEIGHTS = {
+    "created_at": 1,
+    "target_month": 1,
+    "file_name": 4,
+    "report_type": 1,
+    "size": 1,
+    "folder": 3,
+}
+REPORT_HISTORY_STRETCH_COLUMNS = set(REPORT_HISTORY_COLUMN_WIDTHS)
 AUDIT_HISTORY_COLUMNS = (
     ("timestamp", "日時", 150),
     ("status", "状態", 120),
@@ -150,7 +166,27 @@ AUDIT_HISTORY_COLUMNS = (
     ("error", "エラー", 480),
 )
 AUDIT_HISTORY_COLUMN_WIDTHS = {column: width for column, _label, width in AUDIT_HISTORY_COLUMNS}
-AUDIT_HISTORY_STRETCH_COLUMNS = {"output_file", "error"}
+AUDIT_HISTORY_COLUMN_MIN_WIDTHS = {
+    "timestamp": 120,
+    "status": 90,
+    "period": 70,
+    "detail_count": 60,
+    "summary_count": 60,
+    "warnings": 60,
+    "output_file": 180,
+    "error": 220,
+}
+AUDIT_HISTORY_COLUMN_WEIGHTS = {
+    "timestamp": 2,
+    "status": 1,
+    "period": 1,
+    "detail_count": 1,
+    "summary_count": 1,
+    "warnings": 1,
+    "output_file": 4,
+    "error": 5,
+}
+AUDIT_HISTORY_STRETCH_COLUMNS = set(AUDIT_HISTORY_COLUMN_WIDTHS)
 AUDIT_ACTION_BUTTONS = (
     ("履歴を更新", "_refresh_audit_table"),
     ("履歴をCSV出力", "_export_audit_csv"),
@@ -173,6 +209,61 @@ LOG_ERROR_KEYWORDS = ("error", "exception", "エラー", "失敗", "validation_e
 NO_REPORT_TO_OPEN_MESSAGE = "開くレポートを一覧から選択してください。"
 REPORT_SELECTION_REQUIRED_MESSAGE = "開くレポートを一覧から選択してください。"
 REPORT_FILE_MISSING_MESSAGE = "レポートファイルが見つかりません。\n削除または移動された可能性があります。"
+TREE_VERTICAL_SCROLLBAR_RESERVE = 18
+
+
+def apply_responsive_tree_columns(
+    tree: ttk.Treeview,
+    column_widths: dict[str, int],
+    column_min_widths: dict[str, int],
+    column_weights: dict[str, int],
+) -> None:
+    columns = tuple(str(column) for column in tree["columns"])
+    if not columns:
+        return
+
+    viewport_width = max(int(tree.winfo_width()) - TREE_VERTICAL_SCROLLBAR_RESERVE, 0)
+    min_total = sum(column_min_widths[column] for column in columns)
+    if viewport_width <= min_total:
+        for column in columns:
+            tree.column(column, width=column_min_widths[column], minwidth=column_min_widths[column], stretch=True)
+        return
+
+    extra_width = viewport_width - min_total
+    weight_total = sum(max(column_weights.get(column, 1), 1) for column in columns)
+    assigned_extra = 0
+    for index, column in enumerate(columns):
+        if index == len(columns) - 1:
+            column_extra = extra_width - assigned_extra
+        else:
+            column_extra = extra_width * max(column_weights.get(column, 1), 1) // weight_total
+            assigned_extra += column_extra
+        tree.column(
+            column,
+            width=column_min_widths[column] + column_extra,
+            minwidth=column_min_widths[column],
+            stretch=True,
+        )
+
+
+def bind_responsive_tree_columns(
+    tree: ttk.Treeview,
+    column_widths: dict[str, int],
+    column_min_widths: dict[str, int],
+    column_weights: dict[str, int],
+) -> None:
+    for column in tuple(str(column) for column in tree["columns"]):
+        tree.column(
+            column,
+            width=column_widths[column],
+            minwidth=column_min_widths[column],
+            stretch=True,
+        )
+
+    def resize_columns(_event: tk.Event) -> None:
+        apply_responsive_tree_columns(tree, column_widths, column_min_widths, column_weights)
+
+    tree.bind("<Configure>", resize_columns, add="+")
 
 
 class MonthlyReportApp(BaseWindow):
@@ -2154,12 +2245,12 @@ class MonthlyReportApp(BaseWindow):
         table_frame.rowconfigure(0, weight=1)
         for column, label, width in REPORT_HISTORY_COLUMNS:
             self.history_tree.heading(column, text=label)
-            self.history_tree.column(
-                column,
-                width=width,
-                minwidth=min(width, 70),
-                stretch=column in REPORT_HISTORY_STRETCH_COLUMNS,
-            )
+        bind_responsive_tree_columns(
+            self.history_tree,
+            REPORT_HISTORY_COLUMN_WIDTHS,
+            REPORT_HISTORY_COLUMN_MIN_WIDTHS,
+            REPORT_HISTORY_COLUMN_WEIGHTS,
+        )
         self.history_tree.bind("<Double-Button-1>", lambda _event: self._show_selected_report_detail())
         self._bind_tree_mousewheel(self.history_tree)
         self._refresh_history()
@@ -2258,12 +2349,12 @@ class MonthlyReportApp(BaseWindow):
         table_frame.rowconfigure(0, weight=1)
         for column, label, width in AUDIT_HISTORY_COLUMNS:
             self.audit_tree.heading(column, text=label)
-            self.audit_tree.column(
-                column,
-                width=width,
-                minwidth=min(width, 70),
-                stretch=column in AUDIT_HISTORY_STRETCH_COLUMNS,
-            )
+        bind_responsive_tree_columns(
+            self.audit_tree,
+            AUDIT_HISTORY_COLUMN_WIDTHS,
+            AUDIT_HISTORY_COLUMN_MIN_WIDTHS,
+            AUDIT_HISTORY_COLUMN_WEIGHTS,
+        )
         self._bind_tree_mousewheel(self.audit_tree)
         self._refresh_audit_table()
 

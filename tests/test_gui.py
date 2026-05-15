@@ -91,10 +91,23 @@ def test_gui_report_history_columns_and_row_conversion(tmp_path: Path) -> None:
     assert widths["folder"] == 200
     assert widths["file_name"] > widths["target_month"]
     assert widths["file_name"] > widths["size"]
-    assert gui.REPORT_HISTORY_STRETCH_COLUMNS == {"file_name", "folder"}
+    assert gui.REPORT_HISTORY_COLUMN_MIN_WIDTHS == {
+        "created_at": 110,
+        "target_month": 70,
+        "file_name": 220,
+        "report_type": 80,
+        "size": 60,
+        "folder": 140,
+    }
+    assert gui.REPORT_HISTORY_COLUMN_WEIGHTS["file_name"] > gui.REPORT_HISTORY_COLUMN_WEIGHTS["target_month"]
+    assert gui.REPORT_HISTORY_COLUMN_WEIGHTS["file_name"] > gui.REPORT_HISTORY_COLUMN_WEIGHTS["size"]
+    assert gui.REPORT_HISTORY_COLUMN_WEIGHTS["folder"] > gui.REPORT_HISTORY_COLUMN_WEIGHTS["target_month"]
+    assert gui.REPORT_HISTORY_COLUMN_WEIGHTS["folder"] > gui.REPORT_HISTORY_COLUMN_WEIGHTS["size"]
+    assert gui.REPORT_HISTORY_STRETCH_COLUMNS == set(widths)
     history_source = inspect.getsource(gui.MonthlyReportApp._build_history_tab)
     assert "xscrollcommand=x_scroll.set" in history_source
-    assert "REPORT_HISTORY_STRETCH_COLUMNS" in history_source
+    assert "bind_responsive_tree_columns" in history_source
+    assert "REPORT_HISTORY_COLUMN_WEIGHTS" in history_source
 
     row = app_class._report_row_from_path(report_file)
 
@@ -128,10 +141,69 @@ def test_gui_audit_buttons_and_scrollable_columns_are_defined() -> None:
     assert widths["error"] == 480
     assert widths["output_file"] > widths["detail_count"]
     assert widths["error"] > widths["summary_count"]
-    assert gui.AUDIT_HISTORY_STRETCH_COLUMNS == {"output_file", "error"}
+    assert gui.AUDIT_HISTORY_COLUMN_MIN_WIDTHS == {
+        "timestamp": 120,
+        "status": 90,
+        "period": 70,
+        "detail_count": 60,
+        "summary_count": 60,
+        "warnings": 60,
+        "output_file": 180,
+        "error": 220,
+    }
+    assert gui.AUDIT_HISTORY_COLUMN_WEIGHTS["output_file"] > gui.AUDIT_HISTORY_COLUMN_WEIGHTS["detail_count"]
+    assert gui.AUDIT_HISTORY_COLUMN_WEIGHTS["output_file"] > gui.AUDIT_HISTORY_COLUMN_WEIGHTS["summary_count"]
+    assert gui.AUDIT_HISTORY_COLUMN_WEIGHTS["error"] > gui.AUDIT_HISTORY_COLUMN_WEIGHTS["detail_count"]
+    assert gui.AUDIT_HISTORY_COLUMN_WEIGHTS["error"] > gui.AUDIT_HISTORY_COLUMN_WEIGHTS["summary_count"]
+    assert gui.AUDIT_HISTORY_STRETCH_COLUMNS == set(widths)
     audit_source = inspect.getsource(gui.MonthlyReportApp._build_audit_tab)
     assert "xscrollcommand=x_scroll.set" in audit_source
-    assert "AUDIT_HISTORY_STRETCH_COLUMNS" in audit_source
+    assert "bind_responsive_tree_columns" in audit_source
+    assert "AUDIT_HISTORY_COLUMN_WEIGHTS" in audit_source
+
+
+def test_gui_responsive_tree_column_helper_distributes_extra_width() -> None:
+    class FakeTree:
+        def __init__(self, width: int) -> None:
+            self.width = width
+            self.calls: dict[str, dict[str, object]] = {}
+            self.bindings: list[tuple[str, object, str | None]] = []
+
+        def __getitem__(self, key: str) -> tuple[str, ...]:
+            assert key == "columns"
+            return ("small", "large")
+
+        def winfo_width(self) -> int:
+            return self.width
+
+        def column(self, column: str, **kwargs: object) -> None:
+            self.calls[column] = kwargs
+
+        def bind(self, event: str, callback: object, add: str | None = None) -> None:
+            self.bindings.append((event, callback, add))
+
+    tree = FakeTree(width=500)
+    widths = {"small": 100, "large": 200}
+    minimums = {"small": 80, "large": 120}
+    weights = {"small": 1, "large": 4}
+
+    gui.bind_responsive_tree_columns(tree, widths, minimums, weights)  # type: ignore[arg-type]
+    assert tree.calls["small"] == {"width": 100, "minwidth": 80, "stretch": True}
+    assert tree.calls["large"] == {"width": 200, "minwidth": 120, "stretch": True}
+    assert tree.bindings[0][0] == "<Configure>"
+    assert tree.bindings[0][2] == "+"
+
+    gui.apply_responsive_tree_columns(tree, widths, minimums, weights)  # type: ignore[arg-type]
+    assert tree.calls["large"]["width"] > tree.calls["small"]["width"]
+    assert tree.calls["small"]["minwidth"] == 80
+    assert tree.calls["large"]["minwidth"] == 120
+    assert tree.calls["small"]["stretch"] is True
+    assert tree.calls["large"]["stretch"] is True
+
+    narrow_tree = FakeTree(width=100)
+    gui.apply_responsive_tree_columns(narrow_tree, widths, minimums, weights)  # type: ignore[arg-type]
+    assert narrow_tree.calls["small"]["width"] == 80
+    assert narrow_tree.calls["large"]["width"] == 120
 
 
 def test_gui_detail_log_columns_error_detection_and_filtering() -> None:
