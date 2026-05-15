@@ -271,8 +271,13 @@ def setup_logging(max_bytes: int = 1_000_000, backup_count: int = 5) -> None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             LOG_FILE.replace(LOG_DIR / f"app_legacy_{timestamp}.log")
 
+    handlers: list[logging.Handler]
+    try:
+        handlers = [RotatingFileHandler(LOG_FILE, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8")]
+    except OSError:
+        handlers = [logging.StreamHandler(sys.stderr)]
     logging.basicConfig(
-        handlers=[RotatingFileHandler(LOG_FILE, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8")],
+        handlers=handlers,
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         force=True,
