@@ -41,6 +41,44 @@ Windows 環境での利用を想定し、CLI と Tkinter GUI の両方から実�
 - Windows向け実行スクリプト
 - exe化・配布パッケージ作成用スクリプト
 
+## スクリーンショット
+
+### 初期画面
+
+初期画面では、対象月や入力フォルダ、出力フォルダを指定してレポートを作成できます。
+
+![初期画面](docs/images/gui_main.png)
+
+### 月末サマリー
+
+月末サマリーでは、売上合計・明細件数・平均単価・確認が必要な件数を確認できます。
+
+![月末サマリー](docs/images/excel_month_summary.png)
+
+### 前月比較
+
+前月比較では、当月と前月の売上や件数の増減を確認できます。
+
+![前月比較](docs/images/excel_previous_month_comparison.png)
+
+### 詳細データ
+
+詳細データでは、集計対象になった明細を一覧で確認できます。
+
+![詳細データ](docs/images/excel_detail_data.png)
+
+### 商品別集計
+
+商品別集計では、商品ごとの売上ランキングや数量を確認できます。
+
+![商品別集計](docs/images/excel_product_summary.png)
+
+### カテゴリ別集計
+
+カテゴリ別集計では、カテゴリごとの売上傾向を確認できます。
+
+![カテゴリ別集計](docs/images/excel_category_summary.png)
+
 ## 使用技術
 
 - Python
