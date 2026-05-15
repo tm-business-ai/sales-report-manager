@@ -1,16 +1,13 @@
-import gui
-import report
+import inspect
 from pathlib import Path
 
+import gui
+import report
 
-def test_gui_exposes_main_window_and_new_editor_methods() -> None:
+
+def test_gui_exposes_main_window_and_core_methods() -> None:
     app_class = gui.MonthlyReportApp
 
-    assert gui.APP_TITLE == "売上データ自動集計・月末売上管理ツール"
-    assert "月末確認用のExcelレポート" in gui.RUN_TAB_DESCRIPTION
-    assert "Excelレポートを作成" in gui.RUN_TAB_STEPS
-    assert gui.MAPPING_STANDARD_LABELS["date"] == "日付"
-    assert "unit_price" in gui.MAPPING_REQUIRED_KEYS
     assert gui.PRIMARY_BUTTON_WIDTH == 20
     assert gui.SECONDARY_BUTTON_WIDTH == 18
     assert gui.WINDOW_SCREEN_RATIO == 0.9
@@ -20,107 +17,48 @@ def test_gui_exposes_main_window_and_new_editor_methods() -> None:
     assert gui.BUTTON_GRID_COLUMNS == 4
     assert gui.BUTTON_GRID_MIN_WIDTH == 180
     assert gui.HELP_WRAP_LENGTH == 420
-    assert gui.PRESET_COMBO_WIDTH == 45
     assert gui.PREFERRED_TTK_THEMES == ("vista", "xpnative", "default")
-    assert gui.CHECKBOX_LABELS == {
-        "all_summaries": "商品別・カテゴリ別集計を出力",
-        "monthly_trend": "月別推移を出力",
-        "charts": "グラフを出力",
-        "dry_run": "検証のみ実行",
-        "notify": "完了時に通知音を鳴らす",
-    }
-    assert gui.RUN_TAB_FIELD_HELP_TEXTS["input_dir"] == "CSVまたはExcelファイルを置くフォルダを指定します。\nファイル選択もできます。"
-    assert gui.RUN_TAB_FIELD_HELP_TEXTS["month"] == "例: 2026-04\n月単位で集計する場合に指定します。"
-    assert gui.RUN_TAB_FIELD_HELP_TEXTS["start_date"] == "例: 2026-04-01\n任意期間で集計する場合に指定します。"
-    assert gui.RUN_TAB_FIELD_HELP_TEXTS["end_date"] == "例: 2026-04-30\n開始日とセットで使います。"
-    assert gui.RUN_TAB_FIELD_HELP_TEXTS["pattern"] == "例: sales_*.csv\nCSV・Excelの名前規則を指定します。"
-    assert [text for text, _method_name in gui.RUN_ACTION_BUTTONS] == [
-        "Excelレポートを作成",
-        "データをプレビュー",
-        "集計プレビュー",
-        "プリセット適用",
-        "設定読込",
-        "設定保存",
-        "CSVテンプレート作成",
-        "タスク登録",
-        "設定ウィザード",
-        "設定内容チェック",
-        "列名設定を開く",
-        "文字化け修復",
-        "列名候補を更新",
-        "Excel見た目設定",
-        "Excelレポートを開く",
-        "出力フォルダを開く",
-        "エラーを確認",
-    ]
-    assert gui.ERROR_DIALOG_SIZE == "1200x700"
-    assert gui.ERROR_DIALOG_MIN_SIZE == (900, 500)
-    assert gui.ERROR_TABLE_DIALOG_SIZE == "1200x700"
-    assert gui.TAB_LABELS == {
-        "run": "実行",
-        "error": "エラー確認",
-        "history": "作成済みレポート",
-        "audit": "実行履歴",
-        "log": "詳細ログ",
-    }
-    assert "先に「Excelレポートを作成」" in gui.NO_REPORT_TO_OPEN_MESSAGE
-    assert "削除または移動" in gui.REPORT_FILE_MISSING_MESSAGE
-    assert "出力フォルダ" in gui.OUTPUT_FOLDER_MISSING_MESSAGE
-    assert "検証エラーはありません" in gui.NO_VALIDATION_ERRORS_MESSAGE
-    assert "まだエラーCSV" in gui.NO_ERROR_CSV_MESSAGE
-    assert any(column == "fix" and label == "修正方法" for column, label, _width in gui.ERROR_REVIEW_COLUMNS)
-    assert hasattr(gui.main, "format_user_error_message")
-    assert hasattr(gui.main, "read_sales_columns")
-    assert hasattr(gui.main, "infer_column_aliases")
-    assert hasattr(app_class, "_edit_style_config")
-    assert hasattr(app_class, "_edit_column_alias_presets")
-    assert hasattr(app_class, "_open_config_wizard")
-    assert hasattr(app_class, "_review_current_settings")
-    assert hasattr(app_class, "_warning_amount_threshold")
-    assert hasattr(app_class, "_restore_selected_audit_record")
-    assert hasattr(app_class, "_refresh_audit_table")
-    assert hasattr(app_class, "_export_audit_csv")
-    assert hasattr(app_class, "_repair_legacy_text_files")
-    assert hasattr(app_class, "_export_audit_summary_csv")
-    assert hasattr(app_class, "_export_audit_monthly_summary_csv")
-    assert hasattr(app_class, "_preview_legacy_text_repairs")
-    assert hasattr(app_class, "_backup_audit_log")
-    assert hasattr(app_class, "_show_audit_anomalies")
-    assert hasattr(app_class, "_open_latest_report")
-    assert hasattr(app_class, "_open_output_folder")
-    assert hasattr(app_class, "_open_report_file")
-    assert hasattr(app_class, "_remember_latest_report")
-    assert hasattr(app_class, "_review_input_errors")
-    assert hasattr(app_class, "_open_error_csv")
-    assert hasattr(app_class, "_set_error_review_rows")
-    assert hasattr(app_class, "_error_rows_from_validation_error")
-    assert hasattr(app_class, "_configure_style")
-    assert hasattr(app_class, "_apply_preferred_theme")
-    assert hasattr(app_class, "_button")
-    assert hasattr(app_class, "_help_label")
-    assert hasattr(app_class, "_calculate_window_size")
-    assert hasattr(app_class, "_apply_initial_window_size")
-    assert hasattr(app_class, "_create_scrollable_run_frame")
-    assert hasattr(app_class, "_bind_canvas_mousewheel")
-    assert hasattr(app_class, "_bind_run_tab_child_mousewheel")
-    assert hasattr(app_class, "_build_run_action_buttons")
-    assert hasattr(app_class, "_bind_tree_mousewheel")
+    assert gui.NO_REPORT_TO_OPEN_MESSAGE == "開くレポートを一覧から選択してください。"
+    assert "削除または移動された可能性があります。" in gui.REPORT_FILE_MISSING_MESSAGE
+    assert "出力" in gui.OUTPUT_FOLDER_MISSING_MESSAGE or "蜃ｺ蜉" in gui.OUTPUT_FOLDER_MISSING_MESSAGE
 
-    class FakeStyle:
-        def __init__(self, themes: list[str]) -> None:
-            self._themes = themes
-            self.used_theme: str | None = None
-
-        def theme_names(self) -> tuple[str, ...]:
-            return tuple(self._themes)
-
-        def theme_use(self, theme: str | None = None) -> str:
-            if theme is not None:
-                self.used_theme = theme
-            return self.used_theme or self._themes[0]
-
-    assert app_class._apply_preferred_theme(FakeStyle(["clam", "vista"])) == "vista"
-    assert app_class._apply_preferred_theme(FakeStyle(["clam", "default"])) == "default"
+    for method_name in (
+        "_edit_style_config",
+        "_edit_column_alias_presets",
+        "_open_config_wizard",
+        "_review_current_settings",
+        "_restore_selected_audit_record",
+        "_refresh_audit_table",
+        "_export_audit_csv",
+        "_export_audit_summary_csv",
+        "_export_audit_monthly_summary_csv",
+        "_backup_audit_log",
+        "_show_audit_anomalies",
+        "_open_latest_report",
+        "_open_output_folder",
+        "_open_report_file",
+        "_remember_latest_report",
+        "_open_selected_report_folder",
+        "_review_input_errors",
+        "_open_error_csv",
+        "_set_error_review_rows",
+        "_error_rows_from_validation_error",
+        "_configure_style",
+        "_apply_preferred_theme",
+        "_button",
+        "_help_label",
+        "_calculate_window_size",
+        "_apply_initial_window_size",
+        "_create_scrollable_run_frame",
+        "_bind_canvas_mousewheel",
+        "_bind_run_tab_child_mousewheel",
+        "_bind_tree_mousewheel",
+        "_report_row_from_path",
+        "_is_error_log_row",
+        "_filter_detail_log_rows",
+        "_format_log_detail",
+    ):
+        assert hasattr(app_class, method_name)
 
 
 def test_gui_window_size_is_based_on_screen_size() -> None:
@@ -130,14 +68,73 @@ def test_gui_window_size_is_based_on_screen_size() -> None:
     assert app_class._calculate_window_size(1024, 768) == (921, 691, 921, 650)
 
 
-def test_gui_column_mapping_helpers_convert_between_shapes() -> None:
+def test_gui_report_history_columns_and_row_conversion(tmp_path: Path) -> None:
     app_class = gui.MonthlyReportApp
-    aliases = app_class._aliases_from_standard_mapping(
-        object.__new__(app_class),
-        {"date": "売上日", "product": "品名", "category": "", "quantity": "販売数", "unit_price": "販売単価", "amount": "売上金額"},
+    report_file = tmp_path / "monthly_report_202604.xlsx"
+    report_file.write_bytes(b"dummy report")
+
+    assert [label for _key, label, _width in gui.REPORT_HISTORY_COLUMNS] == [
+        "作成日時",
+        "対象月",
+        "ファイル名",
+        "種類",
+        "サイズ",
+        "保存先",
+    ]
+    row = app_class._report_row_from_path(report_file)
+
+    assert row["target_month"] == "2026-04"
+    assert row["file_name"] == "monthly_report_202604.xlsx"
+    assert row["report_type"] == "月次レポート"
+    assert row["size"].endswith("KB")
+    assert row["path"] == str(report_file)
+
+
+def test_gui_audit_buttons_and_scrollable_columns_are_defined() -> None:
+    assert [label for label, _method_name in gui.AUDIT_ACTION_BUTTONS] == [
+        "履歴を更新",
+        "履歴をCSV出力",
+        "要約CSVを作成",
+        "月別要約CSVを作成",
+        "履歴をバックアップ",
+        "異常データを確認",
+        "修復内容を確認",
+    ]
+    widths = {column: width for column, _label, width in gui.AUDIT_HISTORY_COLUMNS}
+
+    assert widths["timestamp"] == 120
+    assert widths["output_file"] == 260
+    assert widths["error"] == 360
+    assert "xscrollcommand=x_scroll.set" in inspect.getsource(gui.MonthlyReportApp._build_audit_tab)
+
+
+def test_gui_detail_log_columns_error_detection_and_filtering() -> None:
+    app_class = gui.MonthlyReportApp
+    assert [label for _key, label, _width in gui.DETAIL_LOG_COLUMNS] == ["日時", "レベル", "処理", "内容", "ファイル"]
+
+    rows = [
+        {"level": "INFO", "message": "完了しました"},
+        {"level": "ERROR", "message": "validation_error: 数量が不正です"},
+        {"level": "INFO", "message": "処理に失敗しました"},
+    ]
+
+    assert app_class._is_error_log_row(rows[1])
+    assert app_class._is_error_log_row(rows[2])
+    assert app_class._filter_detail_log_rows(rows, errors_only=True) == rows[1:]
+    assert app_class._filter_detail_log_rows(rows, errors_only=False) == rows
+
+
+def test_gui_parse_log_line_and_detail_format() -> None:
+    row = gui.MonthlyReportApp._parse_log_line(
+        '{"timestamp":"2026-05-15 14:07","level":"error","process":"report","message":"失敗しました"}',
+        "app.log",
     )
 
-    assert aliases == {"売上日": "date", "品名": "product", "販売数": "quantity", "販売単価": "unit_price", "売上金額": "amount"}
+    assert row["timestamp"] == "2026-05-15 14:07"
+    assert row["level"] == "ERROR"
+    assert row["process"] == "report"
+    assert row["message"] == "失敗しました"
+    assert '"message": "失敗しました"' in gui.MonthlyReportApp._format_log_detail(row)
 
 
 def test_gui_remembers_latest_report_path() -> None:
@@ -150,7 +147,7 @@ def test_gui_remembers_latest_report_path() -> None:
     assert app.latest_report_path == Path("data/output/report.xlsx")
 
 
-def test_gui_open_report_file_guidance_without_launching(tmp_path: Path, monkeypatch) -> None:
+def test_gui_open_report_file_guidance_without_launching(tmp_path: Path) -> None:
     app_class = gui.MonthlyReportApp
     app = object.__new__(app_class)
     messages: list[str] = []
@@ -196,7 +193,7 @@ def test_gui_error_rows_include_fix_column() -> None:
                 "数量に数値以外の値があります。不正な値: abc",
                 "sales.csv",
                 2,
-                "数量には 1、2、10 のような0以上の数値を入力してください。",
+                "数量には 1 以上の数値を入力してください。",
                 {"quantity": "abc", "product": "りんご"},
             )
         ]

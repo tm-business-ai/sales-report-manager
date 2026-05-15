@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -126,6 +127,48 @@ ERROR_REVIEW_COLUMNS = (
     ("unit_price", "単価", 90),
     ("amount", "金額", 100),
 )
+
+
+REPORT_HISTORY_COLUMNS = (
+    ("created_at", "作成日時", 130),
+    ("target_month", "対象月", 90),
+    ("file_name", "ファイル名", 260),
+    ("report_type", "種類", 110),
+    ("size", "サイズ", 80),
+    ("folder", "保存先", 220),
+)
+AUDIT_HISTORY_COLUMNS = (
+    ("timestamp", "日時", 120),
+    ("status", "状態", 100),
+    ("period", "期間", 100),
+    ("detail_count", "明細", 80),
+    ("summary_count", "集計", 80),
+    ("warnings", "警告", 80),
+    ("output_file", "出力", 260),
+    ("error", "エラー", 360),
+)
+AUDIT_ACTION_BUTTONS = (
+    ("履歴を更新", "_refresh_audit_table"),
+    ("履歴をCSV出力", "_export_audit_csv"),
+    ("要約CSVを作成", "_export_audit_summary_csv"),
+    ("月別要約CSVを作成", "_export_audit_monthly_summary_csv"),
+    ("履歴をバックアップ", "_backup_audit_log"),
+    ("異常データを確認", "_show_audit_anomalies"),
+    ("修復内容を確認", "_preview_legacy_text_repairs"),
+)
+DETAIL_LOG_COLUMNS = (
+    ("timestamp", "日時", 140),
+    ("level", "レベル", 90),
+    ("process", "処理", 140),
+    ("message", "内容", 420),
+    ("file", "ファイル", 180),
+)
+NO_REPORT_HISTORY_MESSAGE = "まだ作成済みレポートはありません。\n実行タブでExcelレポートを作成すると、ここに一覧表示されます。"
+DETAIL_LOG_EMPTY_MESSAGE = "ログはまだありません。"
+LOG_ERROR_KEYWORDS = ("error", "exception", "エラー", "失敗", "validation_error")
+NO_REPORT_TO_OPEN_MESSAGE = "開くレポートを一覧から選択してください。"
+REPORT_SELECTION_REQUIRED_MESSAGE = "開くレポートを一覧から選択してください。"
+REPORT_FILE_MISSING_MESSAGE = "レポートファイルが見つかりません。\n削除または移動された可能性があります。"
 
 
 class MonthlyReportApp(BaseWindow):
@@ -2000,6 +2043,304 @@ class MonthlyReportApp(BaseWindow):
         self._apply_config(config)
         self._save_state()
         self.status.set("実行履歴から実行条件を復元しました")
+
+
+    @staticmethod
+    def _report_month_from_filename(path: Path) -> str:
+        match = re.search(r"(20\d{2})[-_]?([01]\d)", path.stem)
+        if not match:
+            return ""
+        year, month = match.groups()
+        if not 1 <= int(month) <= 12:
+            return ""
+        return f"{year}-{month}"
+
+    @staticmethod
+    def _format_file_size(size: int) -> str:
+        return f"{max(1, round(size / 1024)):,} KB"
+
+    @staticmethod
+    def _short_display_path(path: Path) -> str:
+        parts = path.parts
+        if len(parts) >= 2 and parts[-2:] == ("data", "output"):
+            return "data/output"
+        return str(path)
+
+    @classmethod
+    def _report_row_from_path(cls, report_file: Path) -> dict[str, str]:
+        stat = report_file.stat()
+        return {
+            "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            "target_month": cls._report_month_from_filename(report_file),
+            "file_name": report_file.name,
+            "report_type": "月次レポート",
+            "size": cls._format_file_size(stat.st_size),
+            "folder": cls._short_display_path(report_file.parent),
+            "path": str(report_file),
+        }
+
+    @staticmethod
+    def _is_error_log_row(row: dict[str, str]) -> bool:
+        text = " ".join(str(value) for value in row.values()).lower()
+        return any(keyword.lower() in text for keyword in LOG_ERROR_KEYWORDS)
+
+    @classmethod
+    def _filter_detail_log_rows(cls, rows: list[dict[str, str]], errors_only: bool = False) -> list[dict[str, str]]:
+        if not errors_only:
+            return rows
+        return [row for row in rows if cls._is_error_log_row(row)]
+
+    @staticmethod
+    def _parse_log_line(line: str, source_file: str) -> dict[str, str]:
+        raw = main.normalize_legacy_text(line.rstrip("\n"))
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {"timestamp": "", "level": "INFO", "process": "", "message": raw, "file": source_file, "detail": raw}
+        if not isinstance(parsed, dict):
+            return {"timestamp": "", "level": "INFO", "process": "", "message": str(parsed), "file": source_file, "detail": raw}
+        message = parsed.get("message") or parsed.get("error") or parsed.get("status") or raw
+        level = parsed.get("level") or parsed.get("status") or "INFO"
+        process = parsed.get("process") or parsed.get("event") or parsed.get("action") or parsed.get("month") or ""
+        return {
+            "timestamp": str(parsed.get("timestamp") or parsed.get("time") or ""),
+            "level": str(level).upper(),
+            "process": str(process),
+            "message": main.normalize_legacy_text(str(message)),
+            "file": source_file,
+            "detail": json.dumps(parsed, ensure_ascii=False, indent=2),
+        }
+
+    @staticmethod
+    def _format_log_detail(row: dict[str, str]) -> str:
+        return row.get("detail") or "\n".join(
+            f"{label}: {row.get(key, '')}"
+            for key, label in (
+                ("timestamp", "日時"),
+                ("level", "レベル"),
+                ("process", "処理"),
+                ("message", "内容"),
+                ("file", "ファイル"),
+            )
+        )
+
+    def _build_history_tab(self, root: ttk.Frame) -> None:
+        ttk.Label(root, text="作成したExcelレポートを一覧で確認できます。対象月、サイズ、保存先を確認し、選択したレポートを開けます。", justify=tk.LEFT, wraplength=900).pack(fill=tk.X, pady=(0, 8))
+        buttons = ttk.Frame(root)
+        buttons.pack(fill=tk.X, pady=(0, 8))
+        self._button(buttons, text="一覧を更新", command=self._refresh_history, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT)
+        self._button(buttons, text="選択したレポートを開く", command=self._open_selected_report, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="保存先フォルダを開く", command=self._open_selected_report_folder, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="詳細を表示", command=self._show_selected_report_detail, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self.report_history_status = tk.StringVar(value="")
+        ttk.Label(root, textvariable=self.report_history_status, justify=tk.LEFT, wraplength=900).pack(fill=tk.X, pady=(0, 8))
+        table_frame = ttk.Frame(root)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+        columns = tuple(column for column, _label, _width in REPORT_HISTORY_COLUMNS)
+        self.history_tree = ttk.Treeview(table_frame, columns=columns, show="headings")
+        y_scroll = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.history_tree.yview)
+        x_scroll = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.history_tree.xview)
+        self.history_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        self.history_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        y_scroll.grid(row=0, column=1, sticky=tk.NS)
+        x_scroll.grid(row=1, column=0, sticky=tk.EW)
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        for column, label, width in REPORT_HISTORY_COLUMNS:
+            self.history_tree.heading(column, text=label)
+            self.history_tree.column(column, width=width, minwidth=70, stretch=True)
+        self.history_tree.bind("<Double-Button-1>", lambda _event: self._show_selected_report_detail())
+        self._bind_tree_mousewheel(self.history_tree)
+        self._refresh_history()
+
+    def _refresh_history(self) -> None:
+        if not hasattr(self, "history_tree"):
+            return
+        self.history_tree.delete(*self.history_tree.get_children())
+        output_dir = Path(self.output_dir.get().strip() or main.OUTPUT_DIR)
+        if not output_dir.exists() or not output_dir.is_dir():
+            self.report_history = []
+            self.report_history_status.set(NO_REPORT_HISTORY_MESSAGE)
+            return
+        self.report_history = sorted(output_dir.glob("*.xlsx"), key=lambda path: path.stat().st_mtime, reverse=True)
+        if not self.report_history:
+            self.report_history_status.set(NO_REPORT_HISTORY_MESSAGE)
+            return
+        self.report_history_status.set("開くレポートを一覧から選択してください。")
+        for index, report_file in enumerate(self.report_history):
+            row = self._report_row_from_path(report_file)
+            self.history_tree.insert("", tk.END, iid=str(index), values=tuple(row[column] for column, _label, _width in REPORT_HISTORY_COLUMNS))
+
+    def _selected_report(self) -> Path | None:
+        if not self.report_history:
+            self._show_error(NO_REPORT_HISTORY_MESSAGE)
+            return None
+        selection = self.history_tree.selection() if hasattr(self, "history_tree") else ()
+        if not selection:
+            self._show_error(REPORT_SELECTION_REQUIRED_MESSAGE)
+            return None
+        selected_index = int(selection[0])
+        if selected_index >= len(self.report_history):
+            self._show_error(REPORT_SELECTION_REQUIRED_MESSAGE)
+            return None
+        return self.report_history[selected_index]
+
+    def _open_selected_report_folder(self) -> None:
+        report_file = self._selected_report()
+        if report_file is None:
+            return
+        if not report_file.exists():
+            self._show_error(REPORT_FILE_MISSING_MESSAGE)
+            return
+        self._open_path(report_file.parent)
+
+    def _show_selected_report_detail(self) -> None:
+        report_file = self._selected_report()
+        if report_file is None:
+            return
+        if not report_file.exists() or not report_file.is_file():
+            self._show_error(REPORT_FILE_MISSING_MESSAGE)
+            return
+        row = self._report_row_from_path(report_file)
+        window = tk.Toplevel(self)
+        window.title("レポート詳細")
+        window.geometry("720x300")
+        text = tk.Text(window, height=10, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+        text.insert(tk.END, "\n".join([f"作成日時: {row['created_at']}", f"対象月: {row['target_month'] or '-'}", f"ファイル名: {row['file_name']}", f"種類: {row['report_type']}", f"サイズ: {row['size']}", f"保存先: {report_file.parent}", f"フルパス: {report_file}"]))
+        text.configure(state=tk.DISABLED)
+        buttons = ttk.Frame(window)
+        buttons.pack(fill=tk.X, padx=12, pady=(0, 12))
+        ttk.Button(buttons, text="選択したレポートを開く", command=lambda: self._open_report_file(report_file)).pack(side=tk.LEFT)
+        ttk.Button(buttons, text="保存先フォルダを開く", command=lambda: self._open_path(report_file.parent)).pack(side=tk.LEFT, padx=(8, 0))
+
+    def _build_audit_tab(self, root: ttk.Frame) -> None:
+        ttk.Label(root, text="実行履歴やエラー内容を確認できます。\nレポート作成時に問題が起きた場合は、この画面で実行結果やエラー概要を確認してください。", justify=tk.LEFT, wraplength=900).pack(fill=tk.X, pady=(0, 8))
+        button_area = ttk.Frame(root)
+        button_area.pack(fill=tk.X, pady=(0, 8))
+        for index, (label, method_name) in enumerate(AUDIT_ACTION_BUTTONS):
+            self._button(button_area, text=label, command=getattr(self, method_name), width=SECONDARY_BUTTON_WIDTH).grid(row=index // 4, column=index % 4, padx=(0 if index % 4 == 0 else 8, 0), pady=(0, 6), sticky=tk.EW)
+        for column in range(4):
+            button_area.columnconfigure(column, minsize=150, weight=1)
+        filters = ttk.Frame(root)
+        filters.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(filters, text="検索").pack(side=tk.LEFT)
+        ttk.Entry(filters, textvariable=self.audit_filter_text, width=24).pack(side=tk.LEFT, padx=(4, 0))
+        ttk.Combobox(filters, textvariable=self.audit_filter_status, values=["all", "success", "validation_error", "error"], state="readonly", width=16).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(filters, text="期間").pack(side=tk.LEFT, padx=(16, 4))
+        ttk.Entry(filters, textvariable=self.audit_filter_date_from, width=12).pack(side=tk.LEFT)
+        ttk.Label(filters, text="から").pack(side=tk.LEFT, padx=4)
+        ttk.Entry(filters, textvariable=self.audit_filter_date_to, width=12).pack(side=tk.LEFT)
+        self._button(filters, text="適用", command=self._refresh_audit_table, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(filters, text="実行条件を復元", command=self._restore_selected_audit_record, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.RIGHT)
+        table_frame = ttk.Frame(root)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+        columns = tuple(column for column, _label, _width in AUDIT_HISTORY_COLUMNS)
+        self.audit_tree = ttk.Treeview(table_frame, columns=columns, show="headings")
+        y_scroll = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.audit_tree.yview)
+        x_scroll = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.audit_tree.xview)
+        self.audit_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        self.audit_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        y_scroll.grid(row=0, column=1, sticky=tk.NS)
+        x_scroll.grid(row=1, column=0, sticky=tk.EW)
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        for column, label, width in AUDIT_HISTORY_COLUMNS:
+            self.audit_tree.heading(column, text=label)
+            self.audit_tree.column(column, width=width, minwidth=70, stretch=False)
+        self._bind_tree_mousewheel(self.audit_tree)
+        self._refresh_audit_table()
+
+    def _build_log_tab(self, root: ttk.Frame) -> None:
+        ttk.Label(root, text="実行ログや内部ログを確認できます。\n通常は実行履歴・エラー確認タブを確認し、詳しい原因を調べる場合にこの画面を使用してください。", justify=tk.LEFT, wraplength=900).pack(fill=tk.X, pady=(0, 8))
+        buttons = ttk.Frame(root)
+        buttons.pack(fill=tk.X, pady=(0, 8))
+        self._button(buttons, text="ログを更新", command=self._refresh_log_text, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT)
+        self._button(buttons, text="エラーのみ表示", command=lambda: self._refresh_detail_log_table(errors_only=True), width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="全件表示", command=lambda: self._refresh_detail_log_table(errors_only=False), width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        self._button(buttons, text="ログフォルダを開く", command=self._open_log_folder, width=SECONDARY_BUTTON_WIDTH).pack(side=tk.LEFT, padx=(8, 0))
+        table_frame = ttk.Frame(root)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+        columns = tuple(column for column, _label, _width in DETAIL_LOG_COLUMNS)
+        self.log_tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=9)
+        y_scroll = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.log_tree.yview)
+        x_scroll = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.log_tree.xview)
+        self.log_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        self.log_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        y_scroll.grid(row=0, column=1, sticky=tk.NS)
+        x_scroll.grid(row=1, column=0, sticky=tk.EW)
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        for column, label, width in DETAIL_LOG_COLUMNS:
+            self.log_tree.heading(column, text=label)
+            self.log_tree.column(column, width=width, minwidth=70, stretch=True)
+        self.log_tree.bind("<<TreeviewSelect>>", lambda _event: self._show_selected_log_detail())
+        self._bind_tree_mousewheel(self.log_tree)
+        ttk.Label(root, text="選択したログの詳細", style="Heading.TLabel").pack(anchor=tk.W, pady=(10, 4))
+        detail_frame = ttk.Frame(root)
+        detail_frame.pack(fill=tk.BOTH, expand=True)
+        self.log_detail_text = tk.Text(detail_frame, height=8, wrap=tk.WORD)
+        detail_scroll = ttk.Scrollbar(detail_frame, orient=tk.VERTICAL, command=self.log_detail_text.yview)
+        self.log_detail_text.configure(yscrollcommand=detail_scroll.set)
+        self.log_detail_text.grid(row=0, column=0, sticky=tk.NSEW)
+        detail_scroll.grid(row=0, column=1, sticky=tk.NS)
+        detail_frame.columnconfigure(0, weight=1)
+        detail_frame.rowconfigure(0, weight=1)
+        self.detail_log_records: dict[str, dict[str, str]] = {}
+        self._refresh_detail_log_table()
+
+    def _read_detail_log_rows(self) -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        for log_file in (main.LOG_FILE, main.AUDIT_LOG_FILE):
+            if not log_file.exists():
+                continue
+            for line in log_file.read_text(encoding="utf-8", errors="replace").splitlines()[-500:]:
+                row = self._parse_log_line(line, log_file.name)
+                if row:
+                    rows.append(row)
+        return rows
+
+    def _refresh_detail_log_table(self, errors_only: bool = False) -> None:
+        if not hasattr(self, "log_tree"):
+            return
+        self.log_tree.delete(*self.log_tree.get_children())
+        self.detail_log_records = {}
+        rows = self._filter_detail_log_rows(self._read_detail_log_rows(), errors_only=errors_only)
+        if not rows:
+            message = "条件に一致するエラーログはありません。" if errors_only else DETAIL_LOG_EMPTY_MESSAGE
+            item_id = self.log_tree.insert("", tk.END, values=("", "", "", message, ""))
+            self.detail_log_records[item_id] = {"detail": message}
+            self._set_log_detail_text(message)
+            return
+        for row in reversed(rows):
+            item_id = self.log_tree.insert("", tk.END, values=tuple(row.get(column, "") for column, _label, _width in DETAIL_LOG_COLUMNS))
+            self.detail_log_records[item_id] = row
+        self._set_log_detail_text("一覧からログを選択すると、詳細を確認できます。")
+
+    def _set_log_detail_text(self, content: str) -> None:
+        if not hasattr(self, "log_detail_text"):
+            return
+        self.log_detail_text.configure(state=tk.NORMAL)
+        self.log_detail_text.delete("1.0", tk.END)
+        self.log_detail_text.insert(tk.END, content)
+        self.log_detail_text.configure(state=tk.DISABLED)
+
+    def _show_selected_log_detail(self) -> None:
+        selection = self.log_tree.selection() if hasattr(self, "log_tree") else ()
+        if selection:
+            self._set_log_detail_text(self._format_log_detail(self.detail_log_records.get(selection[0], {})))
+
+    def _refresh_log_text(self) -> None:
+        self._refresh_detail_log_table(errors_only=False)
+
+    def _refresh_audit_log_text(self) -> None:
+        self._refresh_detail_log_table(errors_only=False)
+
+    def _open_log_folder(self) -> None:
+        main.LOG_DIR.mkdir(parents=True, exist_ok=True)
+        self._open_path(main.LOG_DIR)
 
 
 def main_gui() -> None:
