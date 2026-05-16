@@ -60,12 +60,27 @@ release/SalesReportManager/
 │  │  └─ sample_sales_2026_04.xlsx
 │  └─ output/
 └─ docs/
-   └─ operation_manual.md
+   ├─ operation_manual.md
+   ├─ operation_manual.pdf
+   └─ images/
+      └─ annotated/
 ```
+
+## 画像付きPDFマニュアルの同梱
+
+配布パッケージには、画像付きPDFマニュアルを含めます。
+PDFの元データはローカルの `_private_materials` に作成し、`_private_materials` はGitHubには載せません。
+
+`_private_materials/operation_manual.pdf` が存在する場合、配布パッケージ作成時に `release\SalesReportManager\docs\operation_manual.pdf` として同梱されます。
+`_private_materials/operation_manual.md` と `_private_materials/images/annotated/` が存在する場合も、配布用の `docs` 配下へコピーされます。
+
+配布時は `release\SalesReportManager` フォルダごとZIP化してください。
+`SalesReportManager.exe` だけを単体で移動して配布することは禁止です。
 
 ## 配布時の注意点
 
 - `release/`, `dist/`, `build/`, `*.spec`, `*.exe` はGitHubに含めません。
+- `_private_materials/` は販売用資料、PDF、注釈画像のローカル作業場所であり、GitHubに含めません。
 - `release/SalesReportManager` フォルダをZIP化して利用者へ渡してください。
 - `SalesReportManager.exe` だけを単体で別の場所へ移動しないでください。`_internal` などの依存ファイルがないと起動できません。
 - `data/output/` や `logs/` に実行結果やログが残っていないか確認してください。

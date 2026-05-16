@@ -18,10 +18,13 @@ pytest-cache-files-*/
 
 # Application runtime artifacts
 logs/*
+logs/
 data/output/*
+data/output/
 release/
 build/
 dist/
+tmp_release_check/
 *.spec
 *.exe
 
@@ -42,6 +45,11 @@ dist/
 .env.*
 *.local
 _private_docs/
+_private_materials/
+docs/images/manual_source/
+docs/images/annotated/
+docs/sales_page.md
+docs/operation_manual.pdf
 
 # OS/editor files
 .DS_Store

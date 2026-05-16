@@ -319,6 +319,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_release_package.ps1
 - 実データ、個人情報、認証情報などはリポジトリに含めないでください。
 - `logs/` と `data/output/` は公開対象外です。
 
+## 販売用資料と配布マニュアル
+
+販売用資料や画像付きPDFマニュアルは、ローカルの `_private_materials` に作成します。
+`_private_materials` はGitHub管理対象外です。
+
+配布時は `release\SalesReportManager` フォルダにPDFマニュアルを同梱できます。
+販売ページ本文や注釈画像はREADMEには掲載しません。
+
 ## GUIタブの確認ポイント
 
 ### 作成済みレポート
